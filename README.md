@@ -15,12 +15,21 @@ Produktseite: https://lan-solo.com/de/tools/file-port/ · Plan:
 
 **Phase 0 — Core & CLI (geplant).** Der Rust-Core (`core/`) bekommt eine
 gemeinsame Backend-Abstraktion für alle Protokolle; eine CLI (`cli/`) treibt
-ihn für Skripte und Tests. Die Desktop-App (Tauri, Zwei-Fenster-UI) folgt in
-Phase 2 — gleiche Toolchain wie bei keypile und packed.
+ihn für Skripte und Tests. Die Zwei-Fenster-UI folgt in Phase 2 — gleiche
+Toolchain wie bei keypile und packed.
+
+Das Tauri-App-Grundgerüst (`src-tauri/` + `src/`) steht bereits inklusive
+**In-App-Updater** (gleiches Muster wie keypile): signierte Updates von GitHub
+Releases, stiller Check beim Start, „Nach Updates suchen"-Button — und vor
+jeder Installation zeigt die App das Changelog, installiert wird erst nach
+Bestätigung. Releases entstehen per Git-Tag `v*` (`.github/workflows/build.yml`
+baut, signiert, generiert das Changelog aus den Commits und published
+`latest.json`). Signatur-Key: `~/.tauri/fileport-updater.key`.
 
 ## Entwicklung
 
 ```sh
-cargo build            # Workspace bauen (sobald Phase 0 steht)
-cargo test -p core     # Core-Tests
+pnpm install           # Frontend-Abhängigkeiten
+pnpm tauri dev         # App-Grundgerüst starten
+cargo check -p fileport-app
 ```

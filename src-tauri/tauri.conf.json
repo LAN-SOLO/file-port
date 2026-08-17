@@ -1,0 +1,75 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "fileport",
+  "version": "0.1.0",
+  "identifier": "com.lan-solo.fileport",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "pnpm build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "file/port",
+        "width": 1080,
+        "height": 700,
+        "minWidth": 800,
+        "minHeight": 540,
+        "resizable": true,
+        "backgroundColor": "#0b1220"
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDZDM0FCRjZGNjJBQ0U1NDEKUldSQjVheGliNzg2Yk5sODIzVHNyZlJCQzVHNTFXTXJiUmEyTFl3WG9VY2ZRbzczQ2FSS3dqcnYK",
+      "endpoints": [
+        "https://github.com/LAN-SOLO/file-port/releases/latest/download/latest.json"
+      ]
+    }
+  },
+  "bundle": {
+    "active": true,
+    "createUpdaterArtifacts": true,
+    "targets": [
+      "app",
+      "dmg",
+      "msi",
+      "nsis",
+      "deb",
+      "rpm",
+      "appimage"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "category": "Utility",
+    "shortDescription": "Dateitransfer für jedes Protokoll",
+    "longDescription": "file/port spricht SFTP, FTP(S), SCP/rsync, WebDAV(S), HTTP(S) und mehr, verbindet die großen Cloud-Speicher — und überträgt abbruchsicher mit Prüfsummen. Lokal, ohne Konto, ohne Telemetrie.",
+    "linux": {
+      "deb": {
+        "depends": []
+      },
+      "rpm": {
+        "depends": []
+      }
+    },
+    "macOS": {
+      "minimumSystemVersion": "10.15"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
+  }
+}

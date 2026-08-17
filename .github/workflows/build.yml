@@ -62,11 +62,28 @@ jobs:
       - name: Run tests
         run: cargo test --workspace
 
+      # Das AppImage-Bundling lädt linuxdeploy & Co. anonym von GitHub und
+      # läuft auf Shared-Runnern gern in 429-Rate-Limits: Tooling cachen
+      # und den Build bei Fehlschlag mit Wartezeit wiederholen.
+      - name: Cache AppImage tooling
+        if: startsWith(matrix.platform, 'ubuntu')
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/tauri
+          key: appimage-tools-${{ runner.os }}
+
       - name: Build bundles
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
-        run: pnpm exec tauri build --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+        shell: bash
+        run: |
+          for attempt in 1 2 3 4; do
+            pnpm exec tauri build --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} && exit 0
+            echo "tauri build failed (attempt $attempt) — retrying in 90s"
+            sleep 90
+          done
+          exit 1
 
       - name: Rename macOS updater archive per arch
         if: startsWith(matrix.platform, 'macos')

@@ -54,6 +54,11 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install
 
+      # tauri::generate_context! braucht ../dist zur Compile-Zeit — daher
+      # das Frontend schon vor den Tests bauen (tauri build baut es erneut).
+      - name: Build frontend
+        run: pnpm build
+
       - name: Run tests
         run: cargo test --workspace
 

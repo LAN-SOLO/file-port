@@ -1,20 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, Entry } from '../api';
 import { t } from '../i18n';
-
-/** Übergeordnetes Verzeichnis — versteht `/` (remote & macOS) und `\` (Windows). */
-function parentPath(path: string): string {
-  const sep = path.includes('\\') && !path.includes('/') ? '\\' : '/';
-  const trimmed = path.length > 1 ? path.replace(/[/\\]+$/, '') : path;
-  const idx = trimmed.lastIndexOf(sep);
-  if (idx <= 0) return sep === '\\' ? trimmed.slice(0, 3) : '/';
-  return trimmed.slice(0, idx);
-}
-
-function joinPath(dir: string, name: string): string {
-  const sep = dir.includes('\\') && !dir.includes('/') ? '\\' : '/';
-  return (dir === sep ? dir : dir.replace(/[/\\]+$/, '')) + sep + name;
-}
+import { joinPath, parentPath } from '../paths';
 
 function formatSize(n: number): string {
   if (n < 1024) return `${n} B`;

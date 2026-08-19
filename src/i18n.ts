@@ -64,6 +64,15 @@ const de = {
   fInvalidCerts: 'Selbstsignierte Zertifikate akzeptieren',
   secretKeptNote: 'Leer lassen behält das gespeicherte Geheimnis.',
   secretStoreNote: 'Geheimnisse landen im Schlüsselbund des Systems, nie in einer Datei.',
+
+  queueTitle: 'Warteschlange',
+  qQueued: 'wartet',
+  qDone: 'fertig ✓',
+  qError: 'Fehler',
+  qCancelled: 'abgebrochen',
+  clearFinished: 'Erledigte entfernen',
+  uploadTitle: 'Ausgewählte Datei hochladen',
+  downloadTitle: 'Ausgewählte Datei herunterladen',
 };
 
 const en: typeof de = {
@@ -131,6 +140,15 @@ const en: typeof de = {
   fInvalidCerts: 'Accept self-signed certificates',
   secretKeptNote: 'Leave empty to keep the stored secret.',
   secretStoreNote: 'Secrets go into the system keychain, never into a file.',
+
+  queueTitle: 'Queue',
+  qQueued: 'queued',
+  qDone: 'done ✓',
+  qError: 'Error',
+  qCancelled: 'cancelled',
+  clearFinished: 'Clear finished',
+  uploadTitle: 'Upload selected file',
+  downloadTitle: 'Download selected file',
 };
 
 export const t = navigator.language.toLowerCase().startsWith('de') ? de : en;

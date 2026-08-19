@@ -82,4 +82,24 @@ export const api = {
   deleteProfile: (id: string) => invoke<void>('profile_delete', { id }),
   connect: (id: string) => invoke<ConnectResult>('connect', { id }),
   disconnect: (conn: number) => invoke<void>('disconnect', { conn }),
+
+  transferStart: (direction: 'download' | 'upload', conn: number, remote: string, local: string) =>
+    invoke<number>('transfer_start', { direction, conn, remote, local }),
+  transferCancel: (id: number) => invoke<void>('transfer_cancel', { id }),
 };
+
+/** Event-Payloads der Transfer-Engine (Tauri-Events). */
+export interface TransferProgressEvent {
+  id: number;
+  done: number;
+  total: number | null;
+}
+
+export interface TransferDoneEvent {
+  id: number;
+  ok: boolean;
+  error: string | null;
+  bytes: number;
+  blake3: string | null;
+  cancelled: boolean;
+}

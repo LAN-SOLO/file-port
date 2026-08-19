@@ -3,6 +3,7 @@
 
 mod engine;
 mod profiles;
+mod transfers;
 
 use serde::Serialize;
 
@@ -53,6 +54,7 @@ fn main() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .manage(engine::Engine::new())
+        .manage(transfers::Transfers::default())
         .invoke_handler(tauri::generate_handler![
             check_update,
             install_update,
@@ -66,6 +68,8 @@ fn main() {
             profiles::profile_delete,
             profiles::connect,
             profiles::disconnect,
+            transfers::transfer_start,
+            transfers::transfer_cancel,
         ])
         .run(tauri::generate_context!())
         .expect("error while running file/port");

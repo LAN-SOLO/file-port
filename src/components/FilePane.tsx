@@ -43,9 +43,19 @@ export interface FilePaneProps {
   reloadKey?: number;
   /** Zusätzliche Kopfzeilen-Aktion (z. B. „Trennen" bei der Gegenstelle). */
   headExtra?: React.ReactNode;
+  /** Doppelklick auf eine Datei (Ordner navigieren immer). */
+  onFileActivate?: (entry: Entry) => void;
 }
 
-export default function FilePane({ conn, title, onError, onSelect, reloadKey, headExtra }: FilePaneProps) {
+export default function FilePane({
+  conn,
+  title,
+  onError,
+  onSelect,
+  reloadKey,
+  headExtra,
+  onFileActivate,
+}: FilePaneProps) {
   const [dir, setDir] = useState<string>('');
   const [pathInput, setPathInput] = useState('');
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -101,6 +111,7 @@ export default function FilePane({ conn, title, onError, onSelect, reloadKey, he
 
   const open = (e: Entry) => {
     if (e.kind === 'dir') load(e.path);
+    else onFileActivate?.(e);
   };
 
   const submitPrompt = async () => {

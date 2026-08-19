@@ -101,6 +101,14 @@ file-port/
 
 ## 4. Roadmap
 
+> **Umsetzungsstand (v0.2.4, Beta):** Engine und Desktop-App stehen — Backend-
+> Trait mit lokalem FS, SFTP, FTP(S), WebDAV und S3-kompatiblen Diensten
+> (BLAKE3, Abbruch, Fortschritt; Integrationstests gegen echte Docker-Server)
+> plus Zwei-Fenster-UI mit Verbindungs-Manager (Schlüsselbund) und
+> sequenzieller Warteschlange. Die geplante CLI entfiel vorerst zugunsten der
+> App; die Integrationstests übernehmen die skriptbare Testbarkeit.
+> Versionsschema: `v0.PHASE.SCHRITT` (0 = Beta).
+
 - **Phase 0 — Core & CLI:** Backend-Trait, lokales FS, SFTP, FTP(S);
   Resume + BLAKE3-Prüfsummen; CLI `ls/get/put`; Integrationstests gegen
   Docker-Container (openssh, vsftpd).

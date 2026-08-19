@@ -111,9 +111,9 @@ export default function App() {
       );
   }, [queue]);
 
-  const enqueue = (direction: 'download' | 'upload') => {
+  const enqueue = (direction: 'download' | 'upload', explicit?: Entry) => {
     if (remoteConn === null) return;
-    const src = direction === 'upload' ? localSel.entry : remoteSel.entry;
+    const src = explicit ?? (direction === 'upload' ? localSel.entry : remoteSel.entry);
     if (!src || src.kind === 'dir') return;
     const item: QItem = {
       key: nextKey++,
@@ -188,6 +188,7 @@ export default function App() {
           onError={onPaneError}
           onSelect={onLocalSelect}
           reloadKey={reloadLocal}
+          onFileActivate={(e) => enqueue('upload', e)}
         />
         <div className="transfer-buttons">
           <button
@@ -213,7 +214,12 @@ export default function App() {
             setRemoteConn(conn);
             if (conn === null) setRemoteSel({ entry: null, dir: '' });
           }}
-          paneProps={{ onError: onPaneError, onSelect: onRemoteSelect, reloadKey: reloadRemote }}
+          paneProps={{
+            onError: onPaneError,
+            onSelect: onRemoteSelect,
+            reloadKey: reloadRemote,
+            onFileActivate: (e) => enqueue('download', e),
+          }}
         />
       </main>
 

@@ -137,7 +137,7 @@ mod tests {
         let seen = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
         let seen2 = seen.clone();
         let ctl = TransferCtl {
-            progress: Box::new(move |done, total| {
+            progress: std::sync::Arc::new(move |done, total| {
                 assert_eq!(total, Some(200_000));
                 seen2.store(done, std::sync::atomic::Ordering::SeqCst);
             }),

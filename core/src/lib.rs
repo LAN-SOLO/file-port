@@ -7,6 +7,7 @@
 
 mod backend;
 mod error;
+mod ftp;
 mod local;
 mod rpath;
 mod sftp;
@@ -14,6 +15,7 @@ mod transfer;
 
 pub use backend::{Backend, Entry, EntryKind};
 pub use error::FpError;
+pub use ftp::{FtpBackend, FtpConfig, FtpSecurity};
 pub use local::LocalBackend;
 pub use rpath::{file_name as rfile_name, join as rjoin, parent as rparent};
 pub use sftp::{SftpAuth, SftpBackend, SftpConfig};

@@ -6,8 +6,10 @@ pub use tokio_util::sync::CancellationToken as CancelToken;
 
 /// Steuerung eines laufenden Transfers: Fortschritts-Callback
 /// (übertragene Bytes, Gesamtgröße falls bekannt) und Abbruch-Token.
+/// Klonbar, damit Backends sie in Blocking-Tasks mitnehmen können.
+#[derive(Clone)]
 pub struct TransferCtl {
-    pub progress: Box<dyn Fn(u64, Option<u64>) + Send + Sync>,
+    pub progress: std::sync::Arc<dyn Fn(u64, Option<u64>) + Send + Sync>,
     pub cancel: CancelToken,
 }
 
@@ -16,7 +18,7 @@ impl TransferCtl {
     /// praktisch für Tests und kleine interne Kopien.
     pub fn noop() -> Self {
         TransferCtl {
-            progress: Box::new(|_, _| {}),
+            progress: std::sync::Arc::new(|_, _| {}),
             cancel: CancelToken::new(),
         }
     }

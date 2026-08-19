@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getVersion } from '@tauri-apps/api/app';
-import { api, UpdateInfo } from './api';
+import { api, LOCAL_CONN, UpdateInfo } from './api';
 import { t } from './i18n';
+import FilePane from './components/FilePane';
 import UpdateModal from './components/UpdateModal';
 
 export default function App() {
@@ -15,8 +16,10 @@ export default function App() {
   const toast = useCallback((msg: string, isError = false) => {
     setToastMsg({ msg, err: isError });
     window.clearTimeout(toastTimer.current);
-    toastTimer.current = window.setTimeout(() => setToastMsg(null), 4000);
+    toastTimer.current = window.setTimeout(() => setToastMsg(null), 5000);
   }, []);
+
+  const onPaneError = useCallback((msg: string) => toast(msg, true), [toast]);
 
   useEffect(() => {
     getVersion().then(setVersion).catch(() => {});
@@ -37,6 +40,7 @@ export default function App() {
       const u = await api.checkUpdate();
       setUpdate(u);
       if (u) setShowUpdateModal(true);
+      else toast(t.upToDate);
     } catch (err) {
       toast(String(err), true);
     } finally {
@@ -45,33 +49,31 @@ export default function App() {
   };
 
   return (
-    <div className="shell">
-      <header>
+    <div className="app">
+      <header className="topbar">
         <h1>
           <span className="brand">file/port</span>
           <span className="dot">.</span>
         </h1>
-        <div className="subtitle">{t.subtitle}</div>
-        {version && <div className="version">v{version}</div>}
-      </header>
-
-      <section className="card">
-        <h2>{t.statusTitle}</h2>
-        <p>{t.statusText}</p>
-        <div className="updrow">
+        <span className="subtitle">{t.subtitle}</span>
+        <div className="topbar-right">
           {update !== 'unchecked' && update !== null ? (
-            <button className="primary" onClick={() => setShowUpdateModal(true)}>
-              {t.updateAvailable(update.version)} — {t.updateNow}
+            <button className="primary small" onClick={() => setShowUpdateModal(true)}>
+              {t.updateAvailable(update.version)}
             </button>
           ) : (
-            <button onClick={doCheckUpdate} disabled={checking}>
+            <button className="small" onClick={doCheckUpdate} disabled={checking}>
               {checking ? t.updateChecking : t.checkForUpdates}
             </button>
           )}
-          {update === null && <span className="ok-text">{t.upToDate}</span>}
+          {version && <span className="version">v{version}</span>}
         </div>
-        <div className="faint safenote">{t.updateSafeNote}</div>
-      </section>
+      </header>
+
+      <main className="panes">
+        <FilePane conn={LOCAL_CONN} title={t.localPane} onError={onPaneError} />
+        <FilePane conn={LOCAL_CONN} title={t.localPane} onError={onPaneError} />
+      </main>
 
       {showUpdateModal && update !== 'unchecked' && update !== null && (
         <UpdateModal info={update} onToast={toast} onClose={() => setShowUpdateModal(false)} />

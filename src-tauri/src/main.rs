@@ -1,6 +1,8 @@
 // Prevents an extra console window on Windows in release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod engine;
+
 use serde::Serialize;
 
 #[derive(Serialize)]
@@ -49,7 +51,16 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
-        .invoke_handler(tauri::generate_handler![check_update, install_update])
+        .manage(engine::Engine::new())
+        .invoke_handler(tauri::generate_handler![
+            check_update,
+            install_update,
+            engine::fs_initial_dir,
+            engine::fs_list,
+            engine::fs_mkdir,
+            engine::fs_remove,
+            engine::fs_rename,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running file/port");
 }

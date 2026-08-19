@@ -1320,12 +1320,14 @@ dependencies = [
 name = "fileport-app"
 version = "0.1.5"
 dependencies = [
+ "fileport-core",
  "serde",
  "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-process",
  "tauri-plugin-updater",
+ "tokio",
 ]
 
 [[package]]

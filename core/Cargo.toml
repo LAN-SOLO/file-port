@@ -1,0 +1,17 @@
+[package]
+name = "fileport-core"
+version = "0.1.1"
+description = "file/port — Protokoll-Engine: Backend-Trait, Transfers, Prüfsummen"
+edition = "2021"
+license = "MIT"
+
+[dependencies]
+async-trait = "0.1"
+blake3 = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["fs", "io-util", "rt", "macros", "time", "sync", "net", "rt-multi-thread"] }
+tokio-util = { version = "0.7", features = ["io"] }
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+tempfile = "3"

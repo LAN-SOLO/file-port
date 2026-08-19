@@ -5,7 +5,7 @@ use std::task::{Context, Poll};
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use futures_util::{Stream, StreamExt, TryStreamExt};
+use futures_util::{Stream, TryStreamExt};
 use percent_encoding::{percent_decode_str, utf8_percent_encode, AsciiSet, CONTROLS};
 use quick_xml::events::Event;
 use reqwest::{Method, StatusCode};

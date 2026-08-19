@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod engine;
+mod profiles;
 
 use serde::Serialize;
 
@@ -60,6 +61,11 @@ fn main() {
             engine::fs_mkdir,
             engine::fs_remove,
             engine::fs_rename,
+            profiles::profiles_list,
+            profiles::profile_save,
+            profiles::profile_delete,
+            profiles::connect,
+            profiles::disconnect,
         ])
         .run(tauri::generate_context!())
         .expect("error while running file/port");

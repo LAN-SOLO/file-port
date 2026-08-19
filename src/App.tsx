@@ -3,6 +3,7 @@ import { getVersion } from '@tauri-apps/api/app';
 import { api, LOCAL_CONN, UpdateInfo } from './api';
 import { t } from './i18n';
 import FilePane from './components/FilePane';
+import RemotePane from './components/RemotePane';
 import UpdateModal from './components/UpdateModal';
 
 export default function App() {
@@ -72,7 +73,7 @@ export default function App() {
 
       <main className="panes">
         <FilePane conn={LOCAL_CONN} title={t.localPane} onError={onPaneError} />
-        <FilePane conn={LOCAL_CONN} title={t.localPane} onError={onPaneError} />
+        <RemotePane onError={onPaneError} onConnected={() => {}} paneProps={{ onError: onPaneError }} />
       </main>
 
       {showUpdateModal && update !== 'unchecked' && update !== null && (

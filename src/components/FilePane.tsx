@@ -54,9 +54,11 @@ export interface FilePaneProps {
   onSelect?: (entry: Entry | null, dir: string) => void;
   /** Von außen angestoßenes Neuladen (z. B. nach einem Transfer). */
   reloadKey?: number;
+  /** Zusätzliche Kopfzeilen-Aktion (z. B. „Trennen" bei der Gegenstelle). */
+  headExtra?: React.ReactNode;
 }
 
-export default function FilePane({ conn, title, onError, onSelect, reloadKey }: FilePaneProps) {
+export default function FilePane({ conn, title, onError, onSelect, reloadKey, headExtra }: FilePaneProps) {
   const [dir, setDir] = useState<string>('');
   const [pathInput, setPathInput] = useState('');
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -142,6 +144,7 @@ export default function FilePane({ conn, title, onError, onSelect, reloadKey }: 
       <div className="pane-head">
         <span className="pane-title">{title}</span>
         <span className="pane-count">{t.entries(entries.length)}</span>
+        {headExtra}
       </div>
 
       <div className="pane-toolbar">

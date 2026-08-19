@@ -1,10 +1,10 @@
-# file/port — Produkt- und Implementierungsplan
+# fileport — Produkt- und Implementierungsplan
 
 Ein Datei-Transfer-Client für macOS, Windows und Linux, der praktisch jedes
 Transferprotokoll spricht (SFTP, FTP(S), SCP/rsync, WebDAV(S), HTTP(S), TFTP,
 später AS2/OFTP2), die großen Cloud-Speicher anbindet und abbruchsicher mit
 Prüfsummen überträgt. **Free** bleibt dauerhaft kostenlos und voll nutzbar;
-**file/port bridged** (12 €/Jahr = 1 €/Monat) ergänzt die
+**fileport bridged** (12 €/Jahr = 1 €/Monat) ergänzt die
 Server-zu-Server-Brücke, Managed File Transfer (AS2/OFTP2 mit MDN) und
 Automatisierung (Zeitpläne, Watch-Folder, Regeln, Audit-Log).
 
@@ -30,7 +30,7 @@ Produktseite: https://lan-solo.com/de/tools/file-port/
 ### Alleinstellungsmerkmale (die die Konkurrenz nicht hat)
 
 1. **Direkt-Drop:** Dateien per Einmal-Code Ende-zu-Ende-verschlüsselt direkt
-   an ein anderes file/port schicken — ohne Server, ohne Konto, im LAN und
+   an ein anderes fileport schicken — ohne Server, ohne Konto, im LAN und
    übers Internet. Transmit, FileZilla & Co. können das nicht; die
    Wormhole-Idee existiert nur als CLI-Nische.
 2. **Server-zu-Server-Brücke:** S3 → SFTP, WebDAV → Azure — direkt zwischen
@@ -46,7 +46,7 @@ Produktseite: https://lan-solo.com/de/tools/file-port/
 ### Harte Randbedingungen (ehrlich einplanen!)
 
 - **Kein Tempo-Wunder versprechen.** Schneller als Leitung und Gegenstelle
-  geht nicht; file/port optimiert alles dazwischen (parallele Streams,
+  geht nicht; fileport optimiert alles dazwischen (parallele Streams,
   Wiederaufnahme, keine unnötigen Roundtrips). So steht es auch auf der Seite.
 - **AS2/OFTP2 sind Zertifikats- und Partnerkonfigurations-Monster.** Wird
   erst ausgeliefert, wenn Interop gegen reale Gegenstellen (z. B. mendelson

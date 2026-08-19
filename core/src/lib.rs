@@ -1,4 +1,4 @@
-//! fileport-core — die Protokoll-Engine hinter file/port.
+//! fileport-core — die Protokoll-Engine hinter fileport.
 //!
 //! Alle Gegenstellen (lokales Dateisystem, SFTP, FTP(S), WebDAV, S3 …)
 //! implementieren denselben [`Backend`]-Trait; Transfers laufen immer

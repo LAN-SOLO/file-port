@@ -12,6 +12,7 @@ import {
 import { t } from './i18n';
 import { joinPath } from './paths';
 import FilePane from './components/FilePane';
+import Logo from './components/Logo';
 import QueuePanel, { QItem } from './components/QueuePanel';
 import RemotePane from './components/RemotePane';
 import UpdateModal from './components/UpdateModal';
@@ -163,7 +164,8 @@ export default function App() {
     <div className="app">
       <header className="topbar">
         <h1>
-          <span className="brand">file/port</span>
+          <Logo />
+          <span className="brand">fileport</span>
           <span className="dot">.</span>
         </h1>
         <span className="subtitle">{t.subtitle}</span>

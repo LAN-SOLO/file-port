@@ -1,7 +1,7 @@
 [package]
 name = "fileport-core"
 version = "0.1.5"
-description = "file/port — Protokoll-Engine: Backend-Trait, Transfers, Prüfsummen"
+description = "fileport — Protokoll-Engine: Backend-Trait, Transfers, Prüfsummen"
 edition = "2021"
 license = "MIT"
 

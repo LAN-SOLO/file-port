@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "file/port main window",
+  "description": "fileport main window",
   "windows": ["main"],
   "permissions": ["core:default"]
 }

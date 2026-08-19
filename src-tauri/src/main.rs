@@ -72,5 +72,5 @@ fn main() {
             transfers::transfer_cancel,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running file/port");
+        .expect("error while running fileport");
 }

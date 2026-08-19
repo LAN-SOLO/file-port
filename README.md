@@ -1,11 +1,11 @@
-# file/port
+# fileport
 
 Datei-Transfer-Client für macOS, Windows und Linux: spricht SFTP, FTP(S),
 SCP/rsync, WebDAV(S), HTTP(S) und TFTP, verbindet Clouds von S3-kompatiblen
 Diensten über Azure und Google Cloud bis Dropbox, Google Drive, OneDrive und
 Nextcloud — und überträgt abbruchsicher mit Prüfsummen, Warteschlange und
 Direkt-Drop von Gerät zu Gerät. **Free** bleibt dauerhaft kostenlos und voll
-nutzbar; **file/port bridged** (12 €/Jahr = 1 €/Monat) ergänzt die
+nutzbar; **fileport bridged** (12 €/Jahr = 1 €/Monat) ergänzt die
 Server-zu-Server-Brücke, AS2/OFTP2 (MFT) und Automatisierung.
 
 Produktseite: https://lan-solo.com/de/tools/file-port/ · Plan:

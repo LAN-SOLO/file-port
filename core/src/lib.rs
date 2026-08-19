@@ -9,10 +9,12 @@ mod backend;
 mod error;
 mod local;
 mod rpath;
+mod sftp;
 mod transfer;
 
 pub use backend::{Backend, Entry, EntryKind};
 pub use error::FpError;
 pub use local::LocalBackend;
 pub use rpath::{file_name as rfile_name, join as rjoin, parent as rparent};
+pub use sftp::{SftpAuth, SftpBackend, SftpConfig};
 pub use transfer::{copy_with_progress, CancelToken, TransferCtl, TransferResult};

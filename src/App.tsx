@@ -16,6 +16,7 @@ import Logo from './components/Logo';
 import QueuePanel, { QItem } from './components/QueuePanel';
 import RemotePane from './components/RemotePane';
 import UpdateModal from './components/UpdateModal';
+import Help from './components/Help';
 
 let nextKey = 1;
 
@@ -231,6 +232,7 @@ export default function App() {
         <UpdateModal info={update} onToast={toast} onClose={() => setShowUpdateModal(false)} />
       )}
 
+      <Help />
       {toastMsg && <div className={`toast${toastMsg.err ? ' error' : ''}`}>{toastMsg.msg}</div>}
     </div>
   );

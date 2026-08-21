@@ -20,8 +20,9 @@
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  font-size: 14px;
+  /* Terminal-Look: Mono als UI-Schrift, nicht nur für Akzente */
+  font-family: var(--mono);
+  font-size: 13px;
   -webkit-font-smoothing: antialiased;
   user-select: none;
 }

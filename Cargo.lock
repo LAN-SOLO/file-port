@@ -1558,7 +1558,7 @@ dependencies = [
 
 [[package]]
 name = "fileport-app"
-version = "0.2.7"
+version = "0.2.8"
 dependencies = [
  "fileport-core",
  "keyring",
@@ -1573,7 +1573,7 @@ dependencies = [
 
 [[package]]
 name = "fileport-core"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "async-trait",
  "blake3",
@@ -3458,6 +3458,7 @@ dependencies = [
  "futures-util",
  "http",
  "http-body-util",
+ "httparse",
  "humantime",
  "hyper",
  "itertools",

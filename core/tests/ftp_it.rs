@@ -1,16 +1,23 @@
-//! Integrationstest gegen einen echten FTP-Server (Docker: delfer/alpine-ftp-server).
+//! Integrationstest gegen einen echten FTPS-Server (Docker: stilliard/pure-ftpd
+//! mit erzwungenem TLS und selbstsigniertem Zertifikat) — Klartext-FTP
+//! unterstützt fileport seit 0.2.8 nicht mehr.
 //!
 //! ```sh
-//! docker run --rm -d --name fileport-ftp -p 2121:21 -p 21000-21010:21000-21010 \
-//!   -e USERS="foo|pass" -e ADDRESS=127.0.0.1 delfer/alpine-ftp-server
+//! openssl req -x509 -nodes -newkey rsa:2048 -days 2 -subj "/CN=127.0.0.1" \
+//!   -keyout /tmp/pure-ftpd.pem -out /tmp/pure-ftpd.crt \
+//!   && cat /tmp/pure-ftpd.crt >> /tmp/pure-ftpd.pem
+//! docker run --rm -d --name fileport-ftps -p 2121:21 -p 30000-30009:30000-30009 \
+//!   -e PUBLICHOST=127.0.0.1 -e FTP_USER_NAME=foo -e FTP_USER_PASS=pass \
+//!   -e FTP_USER_HOME=/home/foo -e ADDED_FLAGS="--tls=2" \
+//!   -v /tmp/pure-ftpd.pem:/etc/ssl/private/pure-ftpd.pem stilliard/pure-ftpd
 //! FILEPORT_IT=1 cargo test -p fileport-core --test ftp_it
-//! docker stop fileport-ftp
+//! docker stop fileport-ftps
 //! ```
 
 use fileport_core::{Backend, FtpBackend, FtpConfig, FtpSecurity, TransferCtl};
 
 #[tokio::test(flavor = "multi_thread")]
-async fn ftp_roundtrip_against_real_server() {
+async fn ftps_roundtrip_against_real_server() {
     if std::env::var("FILEPORT_IT").as_deref() != Ok("1") {
         eprintln!("übersprungen — FILEPORT_IT=1 setzen und Docker-FTP starten");
         return;
@@ -21,8 +28,8 @@ async fn ftp_roundtrip_against_real_server() {
         port: 2121,
         user: "foo".into(),
         password: "pass".into(),
-        security: FtpSecurity::Plain,
-        accept_invalid_certs: false,
+        security: FtpSecurity::ExplicitTls,
+        accept_invalid_certs: true,
     })
     .await
     .unwrap();
@@ -68,8 +75,8 @@ async fn ftp_roundtrip_against_real_server() {
         port: 2121,
         user: "foo".into(),
         password: "falsch".into(),
-        security: FtpSecurity::Plain,
-        accept_invalid_certs: false,
+        security: FtpSecurity::ExplicitTls,
+        accept_invalid_certs: true,
     })
     .await;
     assert!(matches!(bad, Err(fileport_core::FpError::Auth(_))));

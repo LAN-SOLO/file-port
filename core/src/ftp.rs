@@ -14,10 +14,10 @@ use crate::transfer::{TransferCtl, TransferResult};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum FtpSecurity {
-    /// Unverschlüsseltes FTP.
-    Plain,
-    /// Explizites FTPS (AUTH TLS auf dem Standardport).
+    /// Explizites FTPS (AUTH TLS auf dem Standardport 21).
     ExplicitTls,
+    /// Implizites FTPS (TLS ab dem ersten Byte, Standardport 990).
+    ImplicitTls,
 }
 
 pub struct FtpConfig {
@@ -31,7 +31,8 @@ pub struct FtpConfig {
     pub accept_invalid_certs: bool,
 }
 
-/// FTP(S) über suppaftp (blocking) — jede Operation nimmt die Verbindung
+/// FTPS über suppaftp (blocking) — immer TLS-verschlüsselt, unverschlüsseltes
+/// FTP wird nicht unterstützt. Jede Operation nimmt die Verbindung
 /// kurz aus dem Mutex und arbeitet in `spawn_blocking`, damit der
 /// Tokio-Reaktor frei bleibt.
 pub struct FtpBackend {
@@ -57,25 +58,25 @@ fn map_ftp(path: &str, e: suppaftp::FtpError) -> FpError {
 
 impl FtpBackend {
     pub async fn connect(cfg: FtpConfig) -> Result<Self, FpError> {
-        let label = format!(
-            "{}://{}@{}",
-            if cfg.security == FtpSecurity::Plain { "ftp" } else { "ftps" },
-            cfg.user,
-            cfg.host
-        );
+        let label = format!("ftps://{}@{}", cfg.user, cfg.host);
         let stream = tokio::task::spawn_blocking(move || -> Result<NativeTlsFtpStream, FpError> {
             let addr = format!("{}:{}", cfg.host, cfg.port);
-            let mut stream = NativeTlsFtpStream::connect(&addr)
+            let tls = TlsConnector::builder()
+                .danger_accept_invalid_certs(cfg.accept_invalid_certs)
+                .build()
                 .map_err(|e| FpError::Connect(e.to_string()))?;
-            if cfg.security == FtpSecurity::ExplicitTls {
-                let tls = TlsConnector::builder()
-                    .danger_accept_invalid_certs(cfg.accept_invalid_certs)
-                    .build()
-                    .map_err(|e| FpError::Connect(e.to_string()))?;
-                stream = stream
+            let mut stream = match cfg.security {
+                FtpSecurity::ExplicitTls => NativeTlsFtpStream::connect(&addr)
+                    .map_err(|e| FpError::Connect(e.to_string()))?
                     .into_secure(NativeTlsConnector::from(tls), &cfg.host)
-                    .map_err(|e| FpError::Connect(format!("TLS: {e}")))?;
-            }
+                    .map_err(|e| FpError::Connect(format!("TLS: {e}")))?,
+                FtpSecurity::ImplicitTls => NativeTlsFtpStream::connect_secure_implicit(
+                    &addr,
+                    NativeTlsConnector::from(tls),
+                    &cfg.host,
+                )
+                .map_err(|e| FpError::Connect(format!("TLS: {e}")))?,
+            };
             stream
                 .login(&cfg.user, &cfg.password)
                 .map_err(|e| FpError::Auth(e.to_string()))?;

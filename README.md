@@ -18,9 +18,11 @@ Produktseite: https://lan-solo.com/de/tools/file-port/ · Plan:
 
 - **Phase 1 — Protokoll-Engine (fertig):** Der Rust-Core (`core/`,
   `fileport-core`) spricht über einen gemeinsamen `Backend`-Trait das lokale
-  Dateisystem, **SFTP** (russh, Passwort/Key, TOFU-Host-Key), **FTP & FTPS**
-  (suppaftp), **WebDAV(S)** (eigener DAV-Layer über reqwest) und
-  **S3-kompatible Dienste** (object_store: AWS, MinIO, Backblaze B2, Hetzner …).
+  Dateisystem, **SFTP** (russh, Passwort/Key, TOFU-Host-Key), **FTPS**
+  (suppaftp, explizit & implizit — Klartext-FTP gibt es seit 0.2.8 nicht mehr),
+  **WebDAV** (eigener DAV-Layer über reqwest, nur HTTPS) sowie Objektspeicher
+  über object_store: **S3-kompatible Dienste** (AWS, MinIO, Backblaze B2,
+  Hetzner …), **Azure Blob Storage** und **Google Cloud Storage**.
   Jeder Transfer läuft mit Fortschritt, Abbruch-Token und BLAKE3-Prüfsumme.
   Alle Backends sind mit Integrationstests gegen echte Server (Docker:
   OpenSSH, vsftpd, Apache-DAV, MinIO) abgedeckt — `FILEPORT_IT=1 cargo test`.

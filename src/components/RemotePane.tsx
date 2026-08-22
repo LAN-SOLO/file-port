@@ -3,13 +3,19 @@ import { api, emptyProfile, Profile, Protocol } from '../api';
 import { t } from '../i18n';
 import FilePane, { FilePaneProps } from './FilePane';
 
+/** Nur verschlüsselte Protokolle — Klartext-FTP gibt es bewusst nicht. */
 const PROTOCOLS: { value: Protocol; label: string }[] = [
-  { value: 'sftp', label: 'SFTP' },
-  { value: 'ftp', label: 'FTP' },
-  { value: 'ftps', label: 'FTPS' },
-  { value: 'webdav', label: 'WebDAV' },
-  { value: 's3', label: 'S3' },
+  { value: 'sftp', label: 'SFTP (SSH)' },
+  { value: 'ftps', label: 'FTPS (explizit, AUTH TLS)' },
+  { value: 'ftps_implicit', label: 'FTPS (implizit, Port 990)' },
+  { value: 'webdav', label: 'WebDAV (HTTPS)' },
+  { value: 's3', label: 'S3 (AWS & kompatible)' },
+  { value: 'azure', label: 'Azure Blob Storage' },
+  { value: 'gcs', label: 'Google Cloud Storage' },
 ];
+
+/** Alte „ftp"-Profile im Formular als FTPS führen — verbunden wird ohnehin nur per TLS. */
+const normalizeProtocol = (p: Protocol): Protocol => (p === 'ftp' ? 'ftps' : p);
 
 interface RemotePaneProps {
   onError: (msg: string) => void;
@@ -101,7 +107,16 @@ export default function RemotePane({ onError, onConnected, paneProps }: RemotePa
   const isS3 = f?.protocol === 's3';
   const isDav = f?.protocol === 'webdav';
   const isSftp = f?.protocol === 'sftp';
-  const secretLabel = isS3 ? t.fSecretKey : isSftp && f?.key_file ? t.fPassphrase : t.fPassword;
+  const isFtps = f?.protocol === 'ftps' || f?.protocol === 'ftps_implicit';
+  const isAzure = f?.protocol === 'azure';
+  const isGcs = f?.protocol === 'gcs';
+  const secretLabel = isS3
+    ? t.fSecretKey
+    : isAzure
+      ? t.fAzureKey
+      : isSftp && f?.key_file
+        ? t.fPassphrase
+        : t.fPassword;
 
   return (
     <section className="pane">
@@ -115,10 +130,16 @@ export default function RemotePane({ onError, onConnected, paneProps }: RemotePa
         {profiles.length === 0 && <p className="faint">{t.noProfiles}</p>}
         {profiles.map((p) => (
           <div className="profile-row" key={p.id}>
-            <span className="proto-badge">{p.protocol}</span>
+            <span className="proto-badge">{normalizeProtocol(p.protocol)}</span>
             <span className="profile-name">{p.name}</span>
             <span className="profile-target">
-              {p.protocol === 'webdav' ? p.base_url : p.protocol === 's3' ? p.bucket : p.host}
+              {p.protocol === 'webdav'
+                ? p.base_url
+                : p.protocol === 's3' || p.protocol === 'gcs'
+                  ? p.bucket
+                  : p.protocol === 'azure'
+                    ? `${p.account}/${p.bucket}`
+                    : p.host}
             </span>
             <button
               className="primary small"
@@ -131,7 +152,7 @@ export default function RemotePane({ onError, onConnected, paneProps }: RemotePa
               className="small"
               title={t.edit}
               onClick={() => {
-                setForm({ ...p });
+                setForm({ ...p, protocol: normalizeProtocol(p.protocol) });
                 setSecret('');
               }}
             >
@@ -201,7 +222,33 @@ export default function RemotePane({ onError, onConnected, paneProps }: RemotePa
               </>
             )}
 
-            {!isDav && !isS3 && (
+            {isAzure && (
+              <div className="frow">
+                <label>
+                  {t.fAccount}
+                  <input value={f.account} onChange={(e) => set({ account: e.target.value })} spellCheck={false} />
+                </label>
+                <label>
+                  {t.fContainer}
+                  <input value={f.bucket} onChange={(e) => set({ bucket: e.target.value })} spellCheck={false} />
+                </label>
+              </div>
+            )}
+
+            {isGcs && (
+              <>
+                <label>
+                  {t.fBucket}
+                  <input value={f.bucket} onChange={(e) => set({ bucket: e.target.value })} spellCheck={false} />
+                </label>
+                <label>
+                  {t.fGcsKeyFile}
+                  <input value={f.key_file} onChange={(e) => set({ key_file: e.target.value })} spellCheck={false} />
+                </label>
+              </>
+            )}
+
+            {!isDav && !isS3 && !isAzure && !isGcs && (
               <div className="frow">
                 <label>
                   {t.fHost}
@@ -211,7 +258,7 @@ export default function RemotePane({ onError, onConnected, paneProps }: RemotePa
                   {t.fPort}
                   <input
                     value={f.port || ''}
-                    placeholder={isSftp ? '22' : '21'}
+                    placeholder={isSftp ? '22' : f.protocol === 'ftps_implicit' ? '990' : '21'}
                     onChange={(e) => set({ port: parseInt(e.target.value, 10) || 0 })}
                     spellCheck={false}
                   />
@@ -219,7 +266,7 @@ export default function RemotePane({ onError, onConnected, paneProps }: RemotePa
               </div>
             )}
 
-            {!isS3 && (
+            {!isS3 && !isAzure && !isGcs && (
               <label>
                 {t.fUser}
                 <input value={f.user} onChange={(e) => set({ user: e.target.value })} spellCheck={false} autoCapitalize="off" />
@@ -233,15 +280,17 @@ export default function RemotePane({ onError, onConnected, paneProps }: RemotePa
               </label>
             )}
 
-            <label>
-              {secretLabel}
-              <input
-                type="password"
-                value={secret}
-                placeholder={f.id ? t.secretKeptNote : ''}
-                onChange={(e) => setSecret(e.target.value)}
-              />
-            </label>
+            {!isGcs && (
+              <label>
+                {secretLabel}
+                <input
+                  type="password"
+                  value={secret}
+                  placeholder={f.id ? t.secretKeptNote : ''}
+                  onChange={(e) => setSecret(e.target.value)}
+                />
+              </label>
+            )}
 
             {isS3 && (
               <label className="check">
@@ -249,7 +298,7 @@ export default function RemotePane({ onError, onConnected, paneProps }: RemotePa
                 {t.fPathStyle}
               </label>
             )}
-            {(isDav || f.protocol === 'ftps') && (
+            {(isDav || isFtps || isS3) && (
               <label className="check">
                 <input
                   type="checkbox"

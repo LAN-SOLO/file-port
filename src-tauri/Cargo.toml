@@ -1,6 +1,6 @@
 [package]
 name = "fileport-app"
-version = "0.2.7"
+version = "0.2.8"
 description = "fileport — Dateitransfer für jedes Protokoll"
 edition = "2021"
 license = "MIT"
@@ -18,7 +18,7 @@ tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-fileport-core = { version = "0.1.5", path = "../core" }
+fileport-core = { version = "0.1.6", path = "../core" }
 tokio = { version = "1.53.1", features = ["sync", "rt", "macros"] }
 keyring = { version = "4.1.6", features = ["apple-native-keyring-store", "windows-native-keyring-store", "zbus-secret-service-keyring-store"] }
 

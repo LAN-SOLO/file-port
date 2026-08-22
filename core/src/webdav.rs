@@ -36,7 +36,9 @@ const PATH_ENC: &AsciiSet = &CONTROLS
 
 pub struct WebdavConfig {
     /// Basis-URL der DAV-Wurzel, z. B.
-    /// `https://cloud.example.com/remote.php/dav/files/anna`.
+    /// `https://cloud.example.com/remote.php/dav/files/anna`. Die App lässt
+    /// nur `https://` zu; `http://` existiert hier allein für die
+    /// Integrationstests gegen lokale Docker-Server.
     pub base_url: String,
     pub user: String,
     pub password: String,

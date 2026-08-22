@@ -8,7 +8,7 @@
 //! docker stop fileport-s3
 //! ```
 
-use fileport_core::{Backend, EntryKind, S3Backend, S3Config, TransferCtl};
+use fileport_core::{Backend, EntryKind, ObjectBackend, S3Config, TransferCtl};
 
 #[tokio::test]
 async fn s3_roundtrip_against_real_server() {
@@ -24,12 +24,13 @@ async fn s3_roundtrip_against_real_server() {
         access_key: "fileport".into(),
         secret_key: secret.into(),
         path_style: true,
+        accept_invalid_certs: false,
     };
 
     // Falsche Zugangsdaten müssen schon beim Verbinden scheitern.
-    assert!(S3Backend::connect(config("falsch-falsch")).await.is_err());
+    assert!(ObjectBackend::connect_s3(config("falsch-falsch")).await.is_err());
 
-    let be = S3Backend::connect(config("fileport-secret")).await.unwrap();
+    let be = ObjectBackend::connect_s3(config("fileport-secret")).await.unwrap();
 
     let dir = tempfile::tempdir().unwrap();
     let src = dir.path().join("src.bin");

@@ -19,7 +19,16 @@ export interface Entry {
 /** Verbindung 0 ist immer das lokale Dateisystem. */
 export const LOCAL_CONN = 0;
 
-export type Protocol = 'sftp' | 'ftp' | 'ftps' | 'webdav' | 's3';
+/** `ftp` existiert nur noch in alten Profilen — verbindet immer per AUTH TLS. */
+export type Protocol =
+  | 'sftp'
+  | 'ftp'
+  | 'ftps'
+  | 'ftps_implicit'
+  | 'webdav'
+  | 's3'
+  | 'azure'
+  | 'gcs';
 
 /** Verbindungs-Profil — Geheimnisse liegen im OS-Schlüsselbund, nie hier. */
 export interface Profile {
@@ -32,6 +41,7 @@ export interface Profile {
   key_file: string;
   host_key: string;
   base_url: string;
+  account: string;
   endpoint: string;
   region: string;
   bucket: string;
@@ -51,6 +61,7 @@ export function emptyProfile(protocol: Protocol = 'sftp'): Profile {
     key_file: '',
     host_key: '',
     base_url: '',
+    account: '',
     endpoint: '',
     region: '',
     bucket: '',

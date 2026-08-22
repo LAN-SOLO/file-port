@@ -1,10 +1,17 @@
+//! Objektspeicher-Backends über `object_store`: S3-kompatible Dienste,
+//! Azure Blob Storage und Google Cloud Storage teilen sich dieselbe
+//! [`Backend`]-Implementierung — nur der Verbindungsaufbau unterscheidet sich.
+//! Alle Verbindungen laufen ausschließlich über HTTPS.
+
 use std::path::Path;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use futures_util::TryStreamExt;
-use object_store::aws::{AmazonS3, AmazonS3Builder};
+use object_store::aws::AmazonS3Builder;
+use object_store::azure::MicrosoftAzureBuilder;
 use object_store::buffered::BufWriter;
+use object_store::gcp::GoogleCloudStorageBuilder;
 use object_store::path::Path as ObjPath;
 use object_store::{ObjectStore, ObjectStoreExt};
 use tokio::io::AsyncWriteExt;
@@ -16,8 +23,7 @@ use crate::transfer::{copy_with_progress, TransferCtl, TransferResult};
 
 pub struct S3Config {
     /// Leer für AWS; sonst z. B. `https://s3.eu-central-003.backblazeb2.com`
-    /// (Backblaze B2), `https://fsn1.your-objectstorage.com` (Hetzner) oder
-    /// `http://127.0.0.1:9000` (MinIO).
+    /// (Backblaze B2) oder `https://fsn1.your-objectstorage.com` (Hetzner).
     pub endpoint: Option<String>,
     pub region: String,
     pub bucket: String,
@@ -25,10 +31,26 @@ pub struct S3Config {
     pub secret_key: String,
     /// Path-Style-Adressierung erzwingen (MinIO & Co. ohne Wildcard-DNS).
     pub path_style: bool,
+    /// Selbstsignierte Zertifikate akzeptieren (selbst gehostete Endpoints) —
+    /// bewusste Entscheidung der Nutzerin im Verbindungs-Profil.
+    pub accept_invalid_certs: bool,
 }
 
-pub struct S3Backend {
-    store: Arc<AmazonS3>,
+pub struct AzureConfig {
+    /// Name des Storage-Kontos (`https://<account>.blob.core.windows.net`).
+    pub account: String,
+    pub container: String,
+    pub access_key: String,
+}
+
+pub struct GcsConfig {
+    pub bucket: String,
+    /// Pfad zur Service-Account-Schlüsseldatei (JSON).
+    pub key_file: String,
+}
+
+pub struct ObjectBackend {
+    store: Arc<dyn ObjectStore>,
     label: String,
 }
 
@@ -47,35 +69,72 @@ fn key(path: &str) -> ObjPath {
     ObjPath::from(path.trim_matches('/'))
 }
 
-/// Name des unsichtbaren Ordner-Markers (siehe [`S3Backend::mkdir`]).
+/// Name des unsichtbaren Ordner-Markers (siehe [`ObjectBackend::mkdir`]).
 const DIR_MARKER: &str = ".fileport-dir";
 
-impl S3Backend {
-    pub async fn connect(cfg: S3Config) -> Result<Self, FpError> {
+impl ObjectBackend {
+    pub async fn connect_s3(cfg: S3Config) -> Result<Self, FpError> {
         let mut builder = AmazonS3Builder::new()
+            .with_client_options(
+                object_store::ClientOptions::new()
+                    .with_allow_invalid_certificates(cfg.accept_invalid_certs),
+            )
             .with_region(&cfg.region)
             .with_bucket_name(&cfg.bucket)
             .with_access_key_id(&cfg.access_key)
             .with_secret_access_key(&cfg.secret_key)
             .with_virtual_hosted_style_request(!cfg.path_style);
         if let Some(endpoint) = &cfg.endpoint {
+            // `http://` existiert allein für die Integrationstests gegen
+            // lokales MinIO — die App lässt nur `https://`-Endpoints zu.
             builder = builder
                 .with_endpoint(endpoint.trim_end_matches('/'))
                 .with_allow_http(endpoint.starts_with("http://"));
         }
         let store = builder.build().map_err(|e| FpError::Connect(e.to_string()))?;
-        let be = S3Backend {
+        Self::verify(ObjectBackend {
             store: Arc::new(store),
             label: format!("s3://{}", cfg.bucket),
-        };
-        // Zugangsdaten und Bucket sofort prüfen, nicht erst beim Browsen.
+        })
+        .await
+    }
+
+    pub async fn connect_azure(cfg: AzureConfig) -> Result<Self, FpError> {
+        let store = MicrosoftAzureBuilder::new()
+            .with_account(&cfg.account)
+            .with_container_name(&cfg.container)
+            .with_access_key(&cfg.access_key)
+            .build()
+            .map_err(|e| FpError::Connect(e.to_string()))?;
+        Self::verify(ObjectBackend {
+            store: Arc::new(store),
+            label: format!("az://{}/{}", cfg.account, cfg.container),
+        })
+        .await
+    }
+
+    pub async fn connect_gcs(cfg: GcsConfig) -> Result<Self, FpError> {
+        let store = GoogleCloudStorageBuilder::new()
+            .with_bucket_name(&cfg.bucket)
+            .with_service_account_path(&cfg.key_file)
+            .build()
+            .map_err(|e| FpError::Connect(e.to_string()))?;
+        Self::verify(ObjectBackend {
+            store: Arc::new(store),
+            label: format!("gs://{}", cfg.bucket),
+        })
+        .await
+    }
+
+    /// Zugangsdaten und Bucket/Container sofort prüfen, nicht erst beim Browsen.
+    async fn verify(be: Self) -> Result<Self, FpError> {
         be.list("/").await?;
         Ok(be)
     }
 }
 
 #[async_trait]
-impl Backend for S3Backend {
+impl Backend for ObjectBackend {
     fn label(&self) -> String {
         self.label.clone()
     }
@@ -167,10 +226,10 @@ impl Backend for S3Backend {
     }
 
     async fn mkdir(&self, path: &str) -> Result<(), FpError> {
-        // S3 kennt keine Verzeichnisse — ein leeres Marker-Objekt im Ordner
-        // macht das Präfix sichtbar. (Ein Schlüssel mit Slash am Ende geht
-        // nicht: object_store normalisiert Pfade.) Listings blenden den
-        // Marker aus; remove(dir) räumt ihn mit ab.
+        // Objektspeicher kennen keine Verzeichnisse — ein leeres Marker-Objekt
+        // im Ordner macht das Präfix sichtbar. (Ein Schlüssel mit Slash am
+        // Ende geht nicht: object_store normalisiert Pfade.) Listings blenden
+        // den Marker aus; remove(dir) räumt ihn mit ab.
         let marker = ObjPath::from(format!("{}/{DIR_MARKER}", path.trim_matches('/')));
         self.store
             .put(&marker, object_store::PutPayload::new())

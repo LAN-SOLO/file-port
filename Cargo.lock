@@ -641,6 +641,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "ccm"
+version = "0.6.0-rc.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4edea5ea70a1285565ac264767613d6c88351a9a0557e7af793a0942590baaed"
+dependencies = [
+ "aead",
+ "cipher 0.5.2",
+ "ctr",
+ "subtle",
+]
+
+[[package]]
 name = "cesu8"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -726,6 +738,17 @@ dependencies = [
  "crypto-common 0.2.2",
  "inout 0.2.2",
  "zeroize",
+]
+
+[[package]]
+name = "cmac"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac78aa94ce13e432b332a4d1bf2eff167d3a2520188ee05b337180a42fd2e62e"
+dependencies = [
+ "cipher 0.5.2",
+ "dbl",
+ "digest 0.11.3",
 ]
 
 [[package]]
@@ -1069,6 +1092,15 @@ name = "data-encoding"
 version = "2.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4583a4551df46e2792f82ceeac45e850d2e2d5debba0b91f102385cda5b11f06"
+
+[[package]]
+name = "dbl"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f0d7a944e61df464668c5f51f56cc667396a8821434273112948ea0b66e405d7"
+dependencies = [
+ "hybrid-array",
+]
 
 [[package]]
 name = "dbus"
@@ -1558,7 +1590,7 @@ dependencies = [
 
 [[package]]
 name = "fileport-app"
-version = "0.2.8"
+version = "0.2.9"
 dependencies = [
  "fileport-core",
  "keyring",
@@ -1573,7 +1605,7 @@ dependencies = [
 
 [[package]]
 name = "fileport-core"
-version = "0.1.6"
+version = "0.1.7"
 dependencies = [
  "async-trait",
  "blake3",
@@ -1587,6 +1619,7 @@ dependencies = [
  "russh",
  "russh-sftp",
  "serde",
+ "smb2",
  "suppaftp",
  "tempfile",
  "thiserror 2.0.20",
@@ -2953,6 +2986,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "112b39cec0b298b6c1999fee3e31427f74f676e4cb9879ed1a121b43661a4154"
 
 [[package]]
+name = "lz4_flex"
+version = "0.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7ef0d4ed8669f8f8826eb00dc878084aa8f253506c4fd5e8f58f5bce72ddb97e"
+dependencies = [
+ "twox-hash",
+]
+
+[[package]]
 name = "markup5ever"
 version = "0.38.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2970,6 +3012,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "69b6441f590336821bb897fb28fc622898ccceb1d6cea3fde5ea86b090c4de98"
 dependencies = [
  "cfg-if",
+ "digest 0.11.3",
+]
+
+[[package]]
+name = "md4"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bd76fb0fd6b2e4be62a73f8e0858ca97f81babcb1af322dcaca196f735f17f80"
+dependencies = [
  "digest 0.11.3",
 ]
 
@@ -5035,6 +5086,33 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ed6a63f02c8539c91a8685a86f4099661ba3da017932f6ebbea6de3f0fa7c90"
 
 [[package]]
+name = "smb2"
+version = "0.18.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac7498eca5f2de9c6ca32a31cb6d54abf7ada8aa904371fe6eb152886b511b5a"
+dependencies = [
+ "aes 0.9.2",
+ "aes-gcm",
+ "async-trait",
+ "ccm",
+ "cmac",
+ "digest 0.11.3",
+ "futures-util",
+ "getrandom 0.4.3",
+ "hmac 0.13.0",
+ "log",
+ "lz4_flex",
+ "md-5",
+ "md4",
+ "num_enum",
+ "pbkdf2",
+ "sha1",
+ "sha2 0.11.0",
+ "thiserror 2.0.20",
+ "tokio",
+]
+
+[[package]]
 name = "socket2"
 version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5771,6 +5849,7 @@ dependencies = [
  "libc",
  "mio",
  "pin-project-lite",
+ "signal-hook-registry",
  "socket2",
  "tokio-macros",
  "windows-sys 0.61.2",
@@ -6035,6 +6114,12 @@ name = "try-lock"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
+
+[[package]]
+name = "twox-hash"
+version = "2.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8464ec13c3691491391d9fce00f6416c9a48e46972f72d7865688be2080192c9"
 
 [[package]]
 name = "typeid"

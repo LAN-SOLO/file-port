@@ -6,9 +6,12 @@ import FilePane, { FilePaneProps } from './FilePane';
 /** Nur verschlüsselte Protokolle — Klartext-FTP gibt es bewusst nicht. */
 const PROTOCOLS: { value: Protocol; label: string }[] = [
   { value: 'sftp', label: 'SFTP (SSH)' },
+  { value: 'scp', label: 'SCP (SSH)' },
+  { value: 'rsync', label: 'rsync über SSH' },
   { value: 'ftps', label: 'FTPS (explizit, AUTH TLS)' },
   { value: 'ftps_implicit', label: 'FTPS (implizit, Port 990)' },
   { value: 'webdav', label: 'WebDAV (HTTPS)' },
+  { value: 'smb', label: 'SMB 2/3 (Windows/NAS)' },
   { value: 's3', label: 'S3 (AWS & kompatible)' },
   { value: 'azure', label: 'Azure Blob Storage' },
   { value: 'gcs', label: 'Google Cloud Storage' },
@@ -106,7 +109,9 @@ export default function RemotePane({ onError, onConnected, paneProps }: RemotePa
   const set = (patch: Partial<Profile>) => f && setForm({ ...f, ...patch });
   const isS3 = f?.protocol === 's3';
   const isDav = f?.protocol === 'webdav';
-  const isSftp = f?.protocol === 'sftp';
+  const isSsh = f?.protocol === 'sftp' || f?.protocol === 'scp' || f?.protocol === 'rsync';
+  const isRsync = f?.protocol === 'rsync';
+  const isSmb = f?.protocol === 'smb';
   const isFtps = f?.protocol === 'ftps' || f?.protocol === 'ftps_implicit';
   const isAzure = f?.protocol === 'azure';
   const isGcs = f?.protocol === 'gcs';
@@ -114,7 +119,7 @@ export default function RemotePane({ onError, onConnected, paneProps }: RemotePa
     ? t.fSecretKey
     : isAzure
       ? t.fAzureKey
-      : isSftp && f?.key_file
+      : isSsh && f?.key_file
         ? t.fPassphrase
         : t.fPassword;
 
@@ -139,7 +144,9 @@ export default function RemotePane({ onError, onConnected, paneProps }: RemotePa
                   ? p.bucket
                   : p.protocol === 'azure'
                     ? `${p.account}/${p.bucket}`
-                    : p.host}
+                    : p.protocol === 'smb'
+                      ? `${p.host}/${p.share}`
+                      : p.host}
             </span>
             <button
               className="primary small"
@@ -258,12 +265,21 @@ export default function RemotePane({ onError, onConnected, paneProps }: RemotePa
                   {t.fPort}
                   <input
                     value={f.port || ''}
-                    placeholder={isSftp ? '22' : f.protocol === 'ftps_implicit' ? '990' : '21'}
+                    placeholder={
+                      isSsh ? '22' : isSmb ? '445' : f.protocol === 'ftps_implicit' ? '990' : '21'
+                    }
                     onChange={(e) => set({ port: parseInt(e.target.value, 10) || 0 })}
                     spellCheck={false}
                   />
                 </label>
               </div>
+            )}
+
+            {isSmb && (
+              <label>
+                {t.fShare}
+                <input value={f.share} onChange={(e) => set({ share: e.target.value })} spellCheck={false} />
+              </label>
             )}
 
             {!isS3 && !isAzure && !isGcs && (
@@ -273,12 +289,13 @@ export default function RemotePane({ onError, onConnected, paneProps }: RemotePa
               </label>
             )}
 
-            {isSftp && (
+            {isSsh && (
               <label>
-                {t.fKeyFile}
+                {isRsync ? t.fKeyFileRequired : t.fKeyFile}
                 <input value={f.key_file} placeholder="~/.ssh/id_ed25519" onChange={(e) => set({ key_file: e.target.value })} spellCheck={false} />
               </label>
             )}
+            {isRsync && <div className="faint">{t.rsyncKeyNote}</div>}
 
             {!isGcs && (
               <label>

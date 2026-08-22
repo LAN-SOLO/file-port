@@ -6,8 +6,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use fileport_core::{
-    AzureConfig, Backend, FtpBackend, FtpConfig, FtpSecurity, GcsConfig, ObjectBackend, S3Config,
-    SftpAuth, SftpBackend, SftpConfig, WebdavBackend, WebdavConfig,
+    AzureConfig, Backend, FtpBackend, FtpConfig, FtpSecurity, GcsConfig, ObjectBackend,
+    RsyncBackend, S3Config, ScpBackend, SftpBackend, SmbBackend, SmbConfig, SshAuth, SshConfig,
+    WebdavBackend, WebdavConfig,
 };
 use serde::{Deserialize, Serialize};
 use tauri::Manager;
@@ -20,6 +21,8 @@ const KEYRING_SERVICE: &str = "com.lan-solo.fileport";
 #[serde(rename_all = "lowercase")]
 pub enum Protocol {
     Sftp,
+    Scp,
+    Rsync,
     /// Nur noch für alte Profile: verbindet seit 0.2.8 immer per AUTH TLS,
     /// unverschlüsseltes FTP gibt es nicht mehr.
     Ftp,
@@ -27,6 +30,7 @@ pub enum Protocol {
     #[serde(rename = "ftps_implicit")]
     FtpsImplicit,
     Webdav,
+    Smb,
     S3,
     Azure,
     Gcs,
@@ -45,12 +49,16 @@ pub struct Profile {
     pub port: u16,
     #[serde(default)]
     pub user: String,
-    /// SFTP: Pfad zur Schlüsseldatei (statt Passwort).
+    /// SFTP/SCP/rsync: Pfad zur SSH-Schlüsseldatei (statt Passwort);
+    /// GCS: Pfad zur Service-Account-JSON.
     #[serde(default)]
     pub key_file: String,
-    /// SFTP: gemerkter Host-Key (Trust-on-first-use).
+    /// SFTP/SCP/rsync: gemerkter Host-Key (Trust-on-first-use).
     #[serde(default)]
     pub host_key: String,
+    /// SMB: Name der Freigabe (Share).
+    #[serde(default)]
+    pub share: String,
     /// WebDAV: Basis-URL der DAV-Wurzel.
     #[serde(default)]
     pub base_url: String,
@@ -177,9 +185,29 @@ pub struct ConnectResult {
     pub label: String,
 }
 
-/// Baut die Verbindung zu einem gespeicherten Profil auf. Bei SFTP wird
-/// der Host-Key nach Trust-on-first-use im Profil gemerkt; ein später
-/// geänderter Server-Key lässt die Verbindung scheitern.
+/// SSH-Verbindungsdaten (SFTP/SCP/rsync) aus einem Profil bauen —
+/// Schlüsseldatei vor Passwort, Secret ist dann die Passphrase.
+fn ssh_config(profile: &Profile, secret: String) -> SshConfig {
+    let auth = if profile.key_file.is_empty() {
+        SshAuth::Password(secret)
+    } else {
+        SshAuth::KeyFile {
+            path: profile.key_file.clone().into(),
+            passphrase: (!secret.is_empty()).then_some(secret),
+        }
+    };
+    SshConfig {
+        host: profile.host.clone(),
+        port: if profile.port == 0 { 22 } else { profile.port },
+        user: profile.user.clone(),
+        auth,
+        expected_host_key: (!profile.host_key.is_empty()).then(|| profile.host_key.clone()),
+    }
+}
+
+/// Baut die Verbindung zu einem gespeicherten Profil auf. Bei SFTP, SCP und
+/// rsync wird der Host-Key nach Trust-on-first-use im Profil gemerkt; ein
+/// später geänderter Server-Key lässt die Verbindung scheitern.
 #[tauri::command]
 pub async fn connect(
     app: tauri::AppHandle,
@@ -195,30 +223,46 @@ pub async fn connect(
 
     let backend: Arc<dyn Backend> = match profile.protocol {
         Protocol::Sftp => {
-            let auth = if profile.key_file.is_empty() {
-                SftpAuth::Password(secret)
-            } else {
-                SftpAuth::KeyFile {
-                    path: profile.key_file.clone().into(),
-                    passphrase: (!secret.is_empty()).then_some(secret),
-                }
-            };
-            let be = SftpBackend::connect(SftpConfig {
-                host: profile.host.clone(),
-                port: if profile.port == 0 { 22 } else { profile.port },
-                user: profile.user.clone(),
-                auth,
-                expected_host_key: (!profile.host_key.is_empty())
-                    .then(|| profile.host_key.clone()),
-            })
-            .await
-            .map_err(|e| e.to_string())?;
+            let be = SftpBackend::connect(ssh_config(profile, secret))
+                .await
+                .map_err(|e| e.to_string())?;
             if profile.host_key.is_empty() {
                 profile.host_key = be.host_key().to_string();
                 store_profiles(&app, &profiles.clone())?;
             }
             Arc::new(be)
         }
+        Protocol::Scp => {
+            let be = ScpBackend::connect(ssh_config(profile, secret))
+                .await
+                .map_err(|e| e.to_string())?;
+            if profile.host_key.is_empty() {
+                profile.host_key = be.host_key().to_string();
+                store_profiles(&app, &profiles.clone())?;
+            }
+            Arc::new(be)
+        }
+        Protocol::Rsync => {
+            let be = RsyncBackend::connect(ssh_config(profile, secret))
+                .await
+                .map_err(|e| e.to_string())?;
+            if profile.host_key.is_empty() {
+                profile.host_key = be.host_key().to_string();
+                store_profiles(&app, &profiles.clone())?;
+            }
+            Arc::new(be)
+        }
+        Protocol::Smb => Arc::new(
+            SmbBackend::connect(SmbConfig {
+                host: profile.host.clone(),
+                port: profile.port,
+                share: profile.share.clone(),
+                user: profile.user.clone(),
+                password: secret,
+            })
+            .await
+            .map_err(|e| e.to_string())?,
+        ),
         // Alte „FTP"-Profile werden stillschweigend auf AUTH TLS gehoben —
         // Klartext-FTP baut fileport grundsätzlich nicht mehr auf.
         Protocol::Ftp | Protocol::Ftps | Protocol::FtpsImplicit => {

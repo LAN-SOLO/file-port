@@ -9,14 +9,14 @@
 //! docker stop fileport-sftp
 //! ```
 
-use fileport_core::{Backend, SftpAuth, SftpBackend, SftpConfig, TransferCtl};
+use fileport_core::{Backend, SftpBackend, SshAuth, SshConfig, TransferCtl};
 
-fn config(expected_host_key: Option<String>) -> SftpConfig {
-    SftpConfig {
+fn config(expected_host_key: Option<String>) -> SshConfig {
+    SshConfig {
         host: "127.0.0.1".into(),
         port: 2222,
         user: "foo".into(),
-        auth: SftpAuth::Password("pass".into()),
+        auth: SshAuth::Password("pass".into()),
         expected_host_key,
     }
 }

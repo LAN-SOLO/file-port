@@ -22,10 +22,13 @@ export const LOCAL_CONN = 0;
 /** `ftp` existiert nur noch in alten Profilen — verbindet immer per AUTH TLS. */
 export type Protocol =
   | 'sftp'
+  | 'scp'
+  | 'rsync'
   | 'ftp'
   | 'ftps'
   | 'ftps_implicit'
   | 'webdav'
+  | 'smb'
   | 's3'
   | 'azure'
   | 'gcs';
@@ -40,6 +43,7 @@ export interface Profile {
   user: string;
   key_file: string;
   host_key: string;
+  share: string;
   base_url: string;
   account: string;
   endpoint: string;
@@ -60,6 +64,7 @@ export function emptyProfile(protocol: Protocol = 'sftp'): Profile {
     user: '',
     key_file: '',
     host_key: '',
+    share: '',
     base_url: '',
     account: '',
     endpoint: '',

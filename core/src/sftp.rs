@@ -1,9 +1,7 @@
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::path::Path;
 
 use async_trait::async_trait;
 use russh::client;
-use russh::keys::{HashAlg, PrivateKeyWithHashAlg};
 use russh_sftp::client::SftpSession;
 use russh_sftp::protocol::OpenFlags;
 use tokio::io::AsyncWriteExt;
@@ -11,49 +9,8 @@ use tokio::io::AsyncWriteExt;
 use crate::backend::{Backend, Entry, EntryKind};
 use crate::error::FpError;
 use crate::rpath;
+use crate::ssh::{connect_ssh, HostKeyCheck, SshConfig};
 use crate::transfer::{copy_with_progress, TransferCtl, TransferResult};
-
-pub enum SftpAuth {
-    Password(String),
-    KeyFile {
-        path: PathBuf,
-        passphrase: Option<String>,
-    },
-}
-
-pub struct SftpConfig {
-    pub host: String,
-    pub port: u16,
-    pub user: String,
-    pub auth: SftpAuth,
-    /// Bekannter Host-Key (OpenSSH-Format) aus einer früheren Verbindung.
-    /// `None` = Trust-on-first-use: der Key wird akzeptiert und über
-    /// [`SftpBackend::host_key`] zurückgemeldet, damit die App ihn speichert.
-    pub expected_host_key: Option<String>,
-}
-
-/// Prüft den Server-Key gegen den gespeicherten (TOFU) und reicht den
-/// tatsächlich gesehenen Key nach außen.
-struct HostKeyCheck {
-    expected: Option<String>,
-    seen: Arc<Mutex<Option<String>>>,
-}
-
-impl client::Handler for HostKeyCheck {
-    type Error = russh::Error;
-
-    async fn check_server_key(
-        &mut self,
-        key: &russh::keys::PublicKey,
-    ) -> Result<bool, Self::Error> {
-        let openssh = key.to_openssh().map_err(|_| russh::Error::UnknownKey)?;
-        *self.seen.lock().unwrap() = Some(openssh.clone());
-        match &self.expected {
-            Some(expected) => Ok(expected.trim() == openssh.trim()),
-            None => Ok(true),
-        }
-    }
-}
 
 pub struct SftpBackend {
     sftp: SftpSession,
@@ -64,53 +21,10 @@ pub struct SftpBackend {
 }
 
 impl SftpBackend {
-    pub async fn connect(cfg: SftpConfig) -> Result<Self, FpError> {
-        let seen = Arc::new(Mutex::new(None));
-        let handler = HostKeyCheck {
-            expected: cfg.expected_host_key.clone(),
-            seen: seen.clone(),
-        };
-        let config = Arc::new(client::Config::default());
-        let mut handle = client::connect(config, (cfg.host.as_str(), cfg.port), handler)
-            .await
-            .map_err(|e| match e {
-                russh::Error::UnknownKey => FpError::Connect(format!(
-                    "Host-Key von {} stimmt nicht mit dem gespeicherten überein",
-                    cfg.host
-                )),
-                other => FpError::Connect(other.to_string()),
-            })?;
-
-        let authed = match &cfg.auth {
-            SftpAuth::Password(pw) => handle
-                .authenticate_password(&cfg.user, pw)
-                .await
-                .map_err(|e| FpError::Auth(e.to_string()))?,
-            SftpAuth::KeyFile { path, passphrase } => {
-                let key = russh::keys::load_secret_key(path, passphrase.as_deref())
-                    .map_err(|e| FpError::Auth(format!("Schlüsseldatei: {e}")))?;
-                let hash: Option<HashAlg> = handle
-                    .best_supported_rsa_hash()
-                    .await
-                    .map_err(|e| FpError::Auth(e.to_string()))?
-                    .flatten();
-                handle
-                    .authenticate_publickey(
-                        &cfg.user,
-                        PrivateKeyWithHashAlg::new(Arc::new(key), hash),
-                    )
-                    .await
-                    .map_err(|e| FpError::Auth(e.to_string()))?
-            }
-        };
-        if !authed.success() {
-            return Err(FpError::Auth(format!(
-                "Server hat die Anmeldung als {} abgelehnt",
-                cfg.user
-            )));
-        }
-
-        let channel = handle
+    pub async fn connect(cfg: SshConfig) -> Result<Self, FpError> {
+        let session = connect_ssh(&cfg).await?;
+        let channel = session
+            .handle
             .channel_open_session()
             .await
             .map_err(|e| FpError::Connect(e.to_string()))?;
@@ -122,11 +36,10 @@ impl SftpBackend {
             .await
             .map_err(|e| FpError::Connect(format!("SFTP-Handshake: {e}")))?;
 
-        let host_key = seen.lock().unwrap().clone().unwrap_or_default();
         Ok(SftpBackend {
             sftp,
-            _handle: handle,
-            host_key,
+            _handle: session.handle,
+            host_key: session.host_key,
             label: format!("sftp://{}@{}", cfg.user, cfg.host),
         })
     }

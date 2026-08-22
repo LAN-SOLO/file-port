@@ -53,6 +53,10 @@ const de = {
   fUser: 'Benutzer',
   fPassword: 'Passwort',
   fKeyFile: 'SSH-Schlüsseldatei (optional, sonst Passwort)',
+  fKeyFileRequired: 'SSH-Schlüsseldatei (für rsync erforderlich)',
+  rsyncKeyNote:
+    'rsync nutzt das lokale rsync/ssh-Programm — die Anmeldung braucht eine Schlüsseldatei ohne Passphrase-Abfrage.',
+  fShare: 'Freigabe (Share)',
   fPassphrase: 'Passphrase der Schlüsseldatei (optional)',
   fBaseUrl: 'Basis-URL (z. B. https://cloud.example.com/remote.php/dav/files/NAME)',
   fEndpoint: 'Endpoint (leer für AWS — z. B. https://s3.eu-central-003.backblazeb2.com)',
@@ -133,6 +137,10 @@ const en: typeof de = {
   fUser: 'User',
   fPassword: 'Password',
   fKeyFile: 'SSH key file (optional, password otherwise)',
+  fKeyFileRequired: 'SSH key file (required for rsync)',
+  rsyncKeyNote:
+    'rsync uses your local rsync/ssh programs — authentication needs a key file that works without a passphrase prompt.',
+  fShare: 'Share',
   fPassphrase: 'Key file passphrase (optional)',
   fBaseUrl: 'Base URL (e.g. https://cloud.example.com/remote.php/dav/files/NAME)',
   fEndpoint: 'Endpoint (empty for AWS — e.g. https://s3.eu-central-003.backblazeb2.com)',

@@ -81,6 +81,9 @@ const de = {
   clearFinished: 'Erledigte entfernen',
   uploadTitle: 'Ausgewählte Datei hochladen',
   downloadTitle: 'Ausgewählte Datei herunterladen',
+
+  themeToggleLight: 'Zum Hell-Modus wechseln',
+  themeToggleDark: 'Zum Dunkel-Modus wechseln',
 };
 
 const en: typeof de = {
@@ -165,6 +168,9 @@ const en: typeof de = {
   clearFinished: 'Clear finished',
   uploadTitle: 'Upload selected file',
   downloadTitle: 'Download selected file',
+
+  themeToggleLight: 'Switch to light mode',
+  themeToggleDark: 'Switch to dark mode',
 };
 
 export const t = navigator.language.toLowerCase().startsWith('de') ? de : en;

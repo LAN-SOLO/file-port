@@ -36,7 +36,8 @@ Produktseite: https://lan-solo.com/de/tools/file-port/ · Plan:
   Verbindungs-Manager mit Profilen (Geheimnisse im OS-Schlüsselbund, nie in
   Dateien), sequenzielle Warteschlange mit Fortschritt und Abbruch,
   Dateioperationen (Neuer Ordner, Umbenennen, Löschen) in beiden Panes,
-  Deutsch/Englisch nach Systemsprache.
+  Deutsch/Englisch nach Systemsprache, Dunkel-/Hell-Modus per Button in
+  der Kopfzeile (gespeichert in `localStorage`).
 - **Später:** OAuth-Clouds (Dropbox/Drive/OneDrive), Direkt-Drop,
   Server-zu-Server-Brücke, AS2/OFTP2 (bridged) — siehe `FILEPORT_PLAN.md`.
 

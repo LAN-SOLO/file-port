@@ -107,6 +107,7 @@ const de: Content = {
         '• Unten — die Warteschlange mit allen Übertragungen',
         'Beide Dateifenster zeigen Name, Größe und Änderungsdatum; Doppelklick öffnet Ordner, „..“ führt nach oben.',
         'Das Pfadfeld über der Liste ist direkt editierbar: Pfad eintippen, Enter — das Fenster springt dorthin.',
+        'Dunkel oder Hell: Der Sonne-/Mond-Button rechts in der Kopfzeile schaltet den Modus um; die Wahl bleibt beim nächsten Start erhalten.',
       ],
     },
     {
@@ -272,6 +273,7 @@ const en: Content = {
         '• Bottom — the queue with all transfers',
         'Both panes show name, size and modified date; double-click opens folders, “..” goes up.',
         'The path field above the list is directly editable: type a path, hit Enter — the pane jumps there.',
+        'Dark or light: the sun/moon button on the right of the header switches the mode; your choice is kept for the next start.',
       ],
     },
     {

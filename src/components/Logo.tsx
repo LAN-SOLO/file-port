@@ -2,6 +2,8 @@
  * App-Icon als Inline-SVG (vereinfachte, flache Fassung von
  * public/brand/fileport.svg der Website): zwei Transfer-Pfeile ⇄ mit
  * Punkt, auf abgerundeter Kachel — skaliert sauber im Header.
+ * Kachel und Punkt folgen dem Theme (CSS-Variablen aus styles.css),
+ * die Pfeile bleiben in beiden Modi im Markenblau.
  */
 export default function Logo({ size = 26 }: { size?: number }) {
   return (
@@ -12,7 +14,16 @@ export default function Logo({ size = 26 }: { size?: number }) {
       aria-hidden="true"
       focusable="false"
     >
-      <rect x="14" y="14" width="996" height="996" rx="226" fill="#14213a" stroke="#2b3d61" strokeWidth="28" />
+      <rect
+        x="14"
+        y="14"
+        width="996"
+        height="996"
+        rx="226"
+        fill="var(--logo-tile, #14213a)"
+        stroke="var(--logo-tile-border, #2b3d61)"
+        strokeWidth="28"
+      />
       <path
         d="M 316 416 L 644 416 M 576 336 L 660 416 L 576 496"
         stroke="#38bdf8"
@@ -29,7 +40,7 @@ export default function Logo({ size = 26 }: { size?: number }) {
         strokeLinejoin="round"
         fill="none"
       />
-      <circle cx="512" cy="524" r="52" fill="#eef4fa" />
+      <circle cx="512" cy="524" r="52" fill="var(--logo-dot, #eef4fa)" />
     </svg>
   );
 }

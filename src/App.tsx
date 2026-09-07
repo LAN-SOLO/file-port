@@ -11,6 +11,7 @@ import {
 } from './api';
 import { t } from './i18n';
 import { joinPath } from './paths';
+import { applyTheme, readTheme, Theme } from './theme';
 import FilePane from './components/FilePane';
 import Logo from './components/Logo';
 import QueuePanel, { QItem } from './components/QueuePanel';
@@ -27,6 +28,7 @@ export default function App() {
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [toastMsg, setToastMsg] = useState<{ msg: string; err: boolean } | null>(null);
   const toastTimer = useRef<number>(0);
+  const [theme, setTheme] = useState<Theme>(readTheme);
 
   const [localSel, setLocalSel] = useState<{ entry: Entry | null; dir: string }>({ entry: null, dir: '' });
   const [remoteSel, setRemoteSel] = useState<{ entry: Entry | null; dir: string }>({ entry: null, dir: '' });
@@ -50,6 +52,8 @@ export default function App() {
     (entry: Entry | null, dir: string) => setRemoteSel({ entry, dir }),
     []
   );
+
+  useEffect(() => applyTheme(theme), [theme]);
 
   useEffect(() => {
     getVersion().then(setVersion).catch(() => {});
@@ -180,6 +184,23 @@ export default function App() {
               {checking ? t.updateChecking : t.checkForUpdates}
             </button>
           )}
+          <button
+            className="small theme-toggle"
+            title={theme === 'dark' ? t.themeToggleLight : t.themeToggleDark}
+            aria-label={theme === 'dark' ? t.themeToggleLight : t.themeToggleDark}
+            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+          >
+            {theme === 'dark' ? (
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="4" />
+                <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+              </svg>
+            ) : (
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 0 0 9.79 9.79z" />
+              </svg>
+            )}
+          </button>
           {version && <span className="version">v{version}</span>}
         </div>
       </header>

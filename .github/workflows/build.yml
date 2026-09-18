@@ -24,6 +24,8 @@ jobs:
             target: x86_64-unknown-linux-gnu
             bundles: 'deb,rpm,appimage'
     runs-on: ${{ matrix.platform }}
+    env:
+      HAS_APPLE_CERT: ${{ secrets.APPLE_CERTIFICATE != '' }}
     # ein hängender apt-Mirror hat v0.2.5 6h blockiert — hart deckeln
     timeout-minutes: 60
     steps:
@@ -75,6 +77,29 @@ jobs:
           path: ~/.cache/tauri
           key: appimage-tools-${{ runner.os }}
 
+      # Apple-Signatur + Notarisierung (nur macOS, nur wenn die Secrets gesetzt sind).
+      # Tauri liest APPLE_CERTIFICATE (base64 .p12), APPLE_CERTIFICATE_PASSWORD,
+      # APPLE_SIGNING_IDENTITY und die App-Store-Connect-API-Daten selbst und
+      # signiert/notarisiert die .app beim Build; die DMG notarisieren wir danach.
+      - name: Prepare Apple signing
+        if: startsWith(matrix.platform, 'macos') && env.HAS_APPLE_CERT == 'true'
+        env:
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/apple"
+          printf '%s' "$APPLE_API_KEY_P8" > "$RUNNER_TEMP/apple/AuthKey.p8"
+          {
+            echo "APPLE_CERTIFICATE=${{ secrets.APPLE_CERTIFICATE }}"
+            echo "APPLE_CERTIFICATE_PASSWORD=${{ secrets.APPLE_CERTIFICATE_PASSWORD }}"
+            echo "APPLE_SIGNING_IDENTITY=${{ secrets.APPLE_SIGNING_IDENTITY }}"
+            echo "APPLE_API_ISSUER=${{ secrets.APPLE_API_ISSUER }}"
+            echo "APPLE_API_KEY=${{ secrets.APPLE_API_KEY }}"
+            echo "APPLE_API_KEY_PATH=$RUNNER_TEMP/apple/AuthKey.p8"
+          } >> "$GITHUB_ENV"
+          echo "Apple signing prepared"
+
       - name: Build bundles
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -87,6 +112,21 @@ jobs:
             sleep 90
           done
           exit 1
+
+      # Die .app hat Tauri bereits notarisiert und gestapelt; die DMG als Download-
+      # Container zusätzlich notarisieren und stapeln, damit Gatekeeper sie ohne
+      # Rückfrage öffnet.
+      - name: Notarize DMG
+        if: startsWith(matrix.platform, 'macos') && env.APPLE_API_KEY_PATH != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          for dmg in target/${{ matrix.target }}/release/bundle/dmg/*.dmg; do
+            echo "notarize $dmg"
+            xcrun notarytool submit "$dmg" --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" --wait
+            xcrun stapler staple "$dmg"
+            spctl -a -t open --context context:primary-signature -v "$dmg" || true
+          done
 
       - name: Rename macOS updater archive per arch
         if: startsWith(matrix.platform, 'macos')

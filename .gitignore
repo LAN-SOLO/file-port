@@ -6,3 +6,6 @@ dist/
 *.log
 .env
 .env.local
+
+# Lokale Test-Builds (macOS/Windows/Linux) — nie committen
+.Deploy/

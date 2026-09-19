@@ -29,7 +29,8 @@ jobs:
     # ein hängender apt-Mirror hat v0.2.5 6h blockiert — hart deckeln
     # macOS: Apples Notary-Dienst brauchte am 2026-09-19 55 min für eine App —
     # Notarisierung von .app + DMG passt nicht in 60 min, daher 180 für macOS.
-    timeout-minutes: ${{ startsWith(matrix.platform, 'macos') && 180 || 60 }}
+    # (screencap 2026-09-19: App 1h44 + DMG >1h15 → 180 gerissen; 330 = knapp unter GitHub-Max 360)
+    timeout-minutes: ${{ startsWith(matrix.platform, 'macos') && 330 || 60 }}
     steps:
       - uses: actions/checkout@v4
 

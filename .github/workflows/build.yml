@@ -125,7 +125,17 @@ jobs:
           set -euo pipefail
           for dmg in target/${{ matrix.target }}/release/bundle/dmg/*.dmg; do
             echo "notarize $dmg"
-            xcrun notarytool submit "$dmg" --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" --wait
+            # Einmal einreichen, dann getrennt warten: `submit --wait` bricht bei
+            # einem kurzen Netzaussetzer des Runners ab (NSURLErrorDomain -1009,
+            # invoices 2026-09-19) — `wait` ist idempotent und darf wiederholt werden.
+            sub_id=$(xcrun notarytool submit "$dmg" --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" --output-format json | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+            echo "submission $sub_id"
+            for attempt in 1 2 3 4 5 6; do
+              xcrun notarytool wait "$sub_id" --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" --timeout 2h && break
+              echo "notarytool wait failed (attempt $attempt) — retrying in 60s"
+              sleep 60
+            done
+            xcrun notarytool info "$sub_id" --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" | grep -q 'status: Accepted'
             xcrun stapler staple "$dmg"
             spctl -a -t open --context context:primary-signature -v "$dmg" || true
           done

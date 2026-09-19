@@ -27,7 +27,9 @@ jobs:
     env:
       HAS_APPLE_CERT: ${{ secrets.APPLE_CERTIFICATE != '' }}
     # ein hängender apt-Mirror hat v0.2.5 6h blockiert — hart deckeln
-    timeout-minutes: 60
+    # macOS: Apples Notary-Dienst brauchte am 2026-09-19 55 min für eine App —
+    # Notarisierung von .app + DMG passt nicht in 60 min, daher 180 für macOS.
+    timeout-minutes: ${{ startsWith(matrix.platform, 'macos') && 180 || 60 }}
     steps:
       - uses: actions/checkout@v4
 

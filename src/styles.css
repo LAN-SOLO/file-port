@@ -931,3 +931,26 @@ button.ghost {
   z-index: 50;
   box-shadow: 0 10px 30px var(--shadow-soft);
 }
+
+/* help language toggle (DE/EN) in the modal header — independent of the app language */
+.hlp-lang {
+  display: inline-flex;
+  border: 1px solid var(--border, #223252);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-right: 6px;
+}
+.hlp-lang-btn {
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  color: var(--text-faint, #5c6f8c);
+  padding: 3px 8px;
+  cursor: pointer;
+}
+.hlp-lang-btn + .hlp-lang-btn { border-left: 1px solid var(--border, #223252); }
+.hlp-lang-btn:hover { color: var(--text, #e2e8f0); }
+.hlp-lang-btn.active { color: var(--blue, #38bdf8); background: var(--bg-raised, rgba(56, 189, 248, 0.08)); }

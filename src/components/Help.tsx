@@ -366,7 +366,12 @@ const en: Content = {
 const SEEN_KEY = 'fileport.tutorialSeen';
 
 export default function Help() {
-  const c = navigator.language.toLowerCase().startsWith('de') ? de : en;
+  // Sprache der Hilfe: folgt der Systemsprache, lässt sich aber im Kopf der
+  // Hilfe jederzeit zwischen DE und EN umschalten
+  const [helpLang, setHelpLang] = useState<'de' | 'en'>(() =>
+    navigator.language.toLowerCase().startsWith('de') ? 'de' : 'en'
+  );
+  const c = helpLang === 'de' ? de : en;
   const [mode, setMode] = useState<'closed' | 'tutorial' | 'manual'>(() =>
     localStorage.getItem(SEEN_KEY) ? 'closed' : 'tutorial'
   );
@@ -419,6 +424,14 @@ export default function Help() {
                 {c.labels.manual}
               </button>
               <span className="hlp-spacer" />
+              <span className="hlp-lang" role="group" aria-label="Sprache / Language">
+                <button className={`hlp-lang-btn ${helpLang === 'de' ? 'active' : ''}`} onClick={() => setHelpLang('de')}>
+                  DE
+                </button>
+                <button className={`hlp-lang-btn ${helpLang === 'en' ? 'active' : ''}`} onClick={() => setHelpLang('en')}>
+                  EN
+                </button>
+              </span>
               <button className="hlp-close" onClick={close}>
                 ✕
               </button>

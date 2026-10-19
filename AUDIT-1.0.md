@@ -22,7 +22,7 @@ Legende Teststatus:
 | Lint | `cargo clippy --workspace --all-targets` | 0 Warnungen |
 | UI-Durchlauf (Mock) | Headless-Chrome | 45 Prüfpunkte grün (DE/macOS 37, EN/Windows-Pfade 8) |
 | Abhängigkeiten | `pnpm audit` | 0 (vorher 1× high: source-map-js, Dev-Tooling → 1.2.2) |
-| Rust-Advisories | `cargo audit` | **nicht gelaufen** — cargo-audit ist lokal nicht installiert |
+| Rust-Advisories | `cargo audit` | Runde 2: gelaufen, Patch-Updates eingespielt — Rest siehe §7 |
 
 Docker-Testserver (arm64-tauglich): `atmoz/sftp`, `lscr.io/linuxserver/openssh-server` (SCP, rsync),
 `delfer/alpine-ftp-server` (vsftpd mit `require_ssl_reuse=YES`), `bytemark/webdav`, `dperson/samba`,
@@ -122,8 +122,14 @@ Theme und Tutorial-Flag.
 - Objektspeicher-Ordner sind Marker-Objekte; Ordner-Umbenennen ist Kopie+Löschen je Objekt (nicht atomar).
 - Azure Blob und GCS nur statisch geprüft (kein Test-Account).
 - SMB-Domänenanmeldung, Kerberos und DFS nicht getestet.
-- Der Download-Zielordner ist immer der links geöffnete Ordner; Überschreib-Rückfrage basiert auf
-  der zuletzt geladenen Ansicht (⟳ bei extern geänderten Ordnern).
+- Der Download-Zielordner ist immer der links geöffnete Ordner. Die Überschreib-Rückfrage beruht
+  auf der zuletzt geladenen Ansicht; seit Runde 2 prüft das Backend unmittelbar vor dem Start erneut
+  und meldet ein inzwischen entstandenes Ziel (die UI fragt dann nach) — Restfenster: Datei entsteht
+  zwischen Prüfung und Abschluss des Transfers.
+- FTPS-Änderungszeiten: LIST liefert keine Zeitzone, fileport nimmt UTC an (vsftpd/ProFTPD-Standard).
+  Server mit `use_localtime=YES` o. Ä. zeigen um den Zeitzonen-Versatz verschobene Zeiten.
+- Schließen des Fensters während eines Downloads beendet den Transfer hart; eine versteckte
+  `.name.fileport-part` kann liegen bleiben (wird beim nächsten Download derselben Datei überschrieben).
 
 ## 5. Manuelle Testliste (echte App)
 
@@ -154,9 +160,9 @@ Gemeinsam für **macOS** (arm64 + Intel) und **Windows** (MSI und NSIS):
 Nur **Windows**:
 
 18. Lokale Pane startet in `C:\Users\<name>`; ↑ bis `C:\` und dort bleiben; Pfadfeld `D:\` wechselt das Laufwerk.
-19. Download einer Server-Datei namens `a:b.txt`, `CON.txt` oder `x\..\y.txt` (z. B. auf Linux-SFTP
-    anlegen) → klarer Fehler (Namen mit `\`/`/` schon beim Einreihen als Hinweis, die übrigen in
-    der Warteschlange), keine Datei außerhalb des Zielordners.
+19. Download einer Server-Datei namens `a:b.txt`, `CON.txt`, `a\b.txt` oder `x\..\y.txt` (z. B. auf
+    Linux-SFTP anlegen) → klarer Fehler in der Warteschlange (Prüfung im Backend), keine Datei
+    außerhalb des Zielordners.
 20. Verzeichnis-Symlink/Junction lokal löschen → nur der Link verschwindet.
 21. rsync-Transfer: kein aufblitzendes Konsolenfenster.
 22. Datei im Ziel geöffnet (z. B. in Excel) und Download mit Ersetzen → verständlicher Fehler,
@@ -215,3 +221,85 @@ Skeptische Nachprüfung des Audits auf Stand `46e28b9`; Befunde unten sind lokal
 - `cargo audit` lokal nicht verfügbar.
 - Meine UI-Änderungen (Case-insensitiv-Check, Namen mit Trennern) sind nur typgeprüft/gebaut,
   nicht im Mock-Harness gefahren.
+
+## 7. Runde 2 (2026-10-20)
+
+Basis `5929792`. Ziel: Reste aus §6 im Code beheben und die App gegen die Fehlermuster L1–L13 aus den
+anderen Apps prüfen. Version bleibt 1.0.0.
+
+**Behoben**
+
+1. *Server-Dateinamen im Backend geprüft (L5):* `transfer_start` bekommt für Downloads Zielordner und
+   Namen getrennt; `download_target` prüft den Namen plattformgerecht (Windows: `\ / : * ? " < > |`,
+   Steuerzeichen, Punkt/Leerzeichen am Ende, Gerätenamen inkl. `COM0`/`LPT0`, `CONIN$`, `COM¹–³`),
+   hängt genau eine Komponente an und prüft das Ergebnis gegen. Die UI-Sperre aus §6.2 entfällt.
+2. *Kein stilles Ersetzen (L5/L9/L11):* Downloads und Uploads ohne bestätigtes `overwrite` scheitern,
+   wenn das Ziel inzwischen existiert (Upload: Prüfung auf der Gegenstelle, ohne Groß-/Kleinschreibung);
+   die UI zeigt dann die Ersetzen-Rückfrage statt eines Fehlers. Umbenennen (lokal und remote) ersetzt
+   nie ein vorhandenes Ziel; nur Groß-/Kleinschreibung desselben Eintrags ändern bleibt erlaubt.
+   Neue lokale Ordner/Umbenennungen folgen denselben Windows-Namensregeln.
+3. *Windows-Sperren (L5):* Das abschließende Umbenennen der Teildatei und das Speichern von
+   `profiles.json` wiederholen bei Sharing-/Lock-Violation (32/33) und „Zugriff verweigert“ (5) bis ~3 s.
+   Nacktes `C:` wird als `C:\` gelistet.
+4. *Fehlermeldungen in UI-Sprache (L2):* `src/errors.ts` übersetzt alle festen deutschen Bausteine aus
+   core und App für die englische Oberfläche (Toasts, Warteschlange, Update-Dialog). Ein Wächter-Test
+   (`tests/errors.test.ts`) liest alle Fehler-Literale aus dem Rust-Code und schlägt fehl, wenn einer
+   ohne Übersetzung bleibt. Häufige OS-Fehler (`io_text`) haben feste Formulierungen mit OS-Code.
+5. *BOM/CRLF aus Windows-Editoren (L4):* SSH-Schlüsseldateien, GCS-JSON und `profiles.json` werden mit
+   UTF-8-BOM und CRLF gelesen (Unit-Test mit Wegwerf-ed25519-Schlüssel).
+6. *Zeitzonen (L10):* SCP/rsync listen per `TZ=UTC0 ls -la` — vorher waren Änderungszeiten um den
+   Zeitzonen-Versatz des Servers verschoben (IT gegen Container mit `TZ=Asia/Tokyo`: ohne Fix 9 h
+   daneben, mit Fix grün). Datumsformat folgt der UI-Sprache. Das Update-Datum kommt als Unix-Zeit
+   (vorher `OffsetDateTime::to_string()`, das `new Date()` nicht lesen konnte — das Datum fehlte).
+7. *Trennen bei laufenden Transfers (L9/L11):* Rückfrage „Abbrechen und trennen?“; erst nach
+   Bestätigung werden laufende und wartende Transfers dieser Verbindung abgebrochen. Fehler beim Trennen
+   werden gemeldet statt verschluckt; eine offene Ersetzen-Rückfrage schließt sich.
+8. *Veraltete Listen (L9):* Antworten früherer `fs_list`-Aufrufe überschreiben die aktuelle Ansicht nicht mehr.
+9. *Profile (L9/L11):* Lese-Ändern-Schreiben auf `profiles.json` serialisiert (ein laufendes `connect`
+   schrieb ein gelöschtes Profil zurück); Schlüsselbund-Fehler beim Löschen werden gemeldet.
+10. *Update-Fehler* zeigte „Update fehlgeschlagen: Update fehlgeschlagen: …“ — Präfix nur noch einmal.
+11. *Layout bei 800 × 540 (Mindestgröße):* Protokoll-Auswahl und Port liefen seitlich aus der Pane,
+    lange Verbindungs-Labels überlappten die Eintragszahl, Rückfragezeilen quetschten die Dateiliste.
+    Behoben (CSS), volle Texte als Tooltip. „Name?“ ersetzt durch einen ganzen Satz (DE/EN).
+
+**Sweep L1–L13 ohne Befund:** L1 (kein `window.confirm/alert/prompt`, alle Rückfragen sind eigene
+Dialoge), L3 (Sprache aus `navigator.language`), L6 (keine Tastenkürzel-Labels), L7 (kein Remote-HTML;
+Changelog als Text), L8 (Transfers als Tasks, Schlüsselbund in `spawn_blocking`, FTP in
+`spawn_blocking`), L13 (Updater-Endpoint/Pubkey unverändert, Vergleich durch tauri-plugin-updater,
+Fehler übersetzt).
+
+**Läufe**
+
+- `cargo test --workspace`: 27 Unit-Tests grün (15 core, 12 app). `cargo clippy --workspace --all-targets`: 0.
+- ITs neu: SCP (linuxserver/openssh-server, `TZ=Asia/Tokyo`, neue mtime-Prüfung) und rsync grün.
+- `pnpm test`: 10/10 (6 neu für Fehlerübersetzung). `pnpm build`: ok. `pnpm audit`: 0.
+- **Windows-Typecheck** `cargo check --target x86_64-pc-windows-msvc --workspace --tests` vom Mac: grün.
+  Dafür wird das Build-Skript von aws-lc-sys per `--config target.x86_64-pc-windows-msvc.aws_lc_0_44_0.*`
+  übersprungen (Bindings `universal_prefixed`) und blake3 mit `CARGO_FEATURE_PURE=1` ohne C/ASM gebaut —
+  nur Typprüfung, kein Linken.
+- `cargo audit`: Patch-Updates `rustls` 0.23.43→0.23.46 (4 Advisories), `quinn-proto` 0.11.16→0.11.19
+  (5 Advisories), dazu `chacha20`/`wnaf` (yanked) und `zvariant`/`zbus_names` (Linux). Offen: `rsa`
+  (RUSTSEC-2023-0071, Marvin, kein Fix verfügbar; russh nutzt es für RSA-Client-Schlüssel — ed25519
+  empfohlen) und `zip` 4.6.1 (3 Advisories zum Entpacken, über tauri-plugin-updater; das Update auf
+  2.12 brächte neue Crates. Tauri-v2-Updater-Artefakte sind signiert und unter macOS tar.gz, unter
+  Windows Installer — `zip::extract` läuft für fileport nicht).
+- UI im Headless-Chrome gegen gemocktes IPC (Mock bildet Backend-Regeln und deutsche Fehlertexte nach),
+  800 × 540, DE/EN × hell/dunkel: 98 Prüfpunkte grün — Update-Dialog/-Fehler, SMB-Anmeldefehler,
+  Formular, Host-Key-Dialog, Ersetzen-Rückfrage (Download Groß/klein, Upload, zweiter Upload derselben
+  Datei), Namensfehler `a:b.txt` in der Warteschlange, Umbenennen-Kollision, Trennen mit laufendem
+  Transfer, Handbuch; keine Überläufe, keine Konsolenfehler, keine deutschen Wörter in EN.
+
+**Nur auf echter Hardware prüfbar**
+
+- Windows nativ: Wiederholung bei Virenscanner-/OneDrive-Sperre (Liste §5.22), Gerätenamen und
+  `C:`-Wurzel, Credential Manager, rsync mit cwRsync/MSYS, Junctions, MSI/NSIS.
+- macOS nativ: Schlüsselbund-Abfrage, notarisiertes DMG, echter Tauri-Updater gegen GitHub
+  (Datum im Dialog, Fehlertexte).
+- Azure/GCS-Konten, SMB mit Domäne/Verschlüsselung, FTPS gegen ProFTPD/FileZilla (Zeitzone der
+  LIST-Ausgabe).
+
+Zusatz zur manuellen Liste: 26. Download/Upload starten, während das Ziel extern angelegt wird →
+Ersetzen-Rückfrage statt stillem Ersetzen. 27. „Trennen“ bei laufendem Download → Rückfrage; nach
+Bestätigung „abgebrochen“, keine Teildatei. 28. SCP/rsync gegen Server in anderer Zeitzone →
+Änderungszeiten wie lokal per `ls -l` auf dem Server (umgerechnet). 29. EN-Systemsprache: ein
+Verbindungsfehler (falsches Passwort) erscheint englisch.

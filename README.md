@@ -27,6 +27,13 @@ und funktionierendem impliziten Modus; Rückfrage vor dem Ersetzen;
 Downloads über Teildatei (das Ziel bleibt bei Fehlern erhalten);
 Ordner-Löschen bei SFTP/FTPS und Ordner-Umbenennen bei Objektspeichern;
 Windows-Pfadkorrekturen und Schutz vor bösartigen Server-Dateinamen.
+Nach der zweiten Audit-Runde zusätzlich: Server-Dateinamen werden im
+Backend plattformgerecht geprüft; Downloads, Uploads und Umbenennen
+ersetzen nie still eine vorhandene Datei; Wiederholung bei kurzzeitig
+gesperrten Dateien unter Windows; Fehlermeldungen in der Sprache der
+Oberfläche (`src/errors.ts`); Schlüsseldateien mit BOM/CRLF; korrekte
+Änderungszeiten bei SCP/rsync-Servern in anderen Zeitzonen; Rückfrage
+beim Trennen mit laufenden Transfers.
 
 - **Phase 1 — Protokoll-Engine (fertig):** Der Rust-Core (`core/`,
   `fileport-core`) spricht über einen gemeinsamen `Backend`-Trait das lokale
@@ -68,7 +75,7 @@ pnpm install           # Frontend-Abhängigkeiten
 pnpm tauri dev         # App im Dev-Modus starten
 pnpm tauri build       # Release-Build (App-Bundle/DMG)
 cargo test --workspace               # Unit-Tests (Engine + App-Logik)
-pnpm test                            # Frontend-Tests (Pfad-Helfer, Node-Testrunner)
+pnpm test                            # Frontend-Tests (Pfade, Fehlerübersetzung; Node-Testrunner)
 FILEPORT_IT=1 cargo test -p fileport-core   # + Integrationstests (Docker nötig,
                                             #   Startbefehle: siehe core/tests/*.rs)
 ```

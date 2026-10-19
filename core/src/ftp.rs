@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::path::Path;
 use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
@@ -379,11 +380,25 @@ impl Backend for FtpBackend {
                     Err(_) => {} // z. B. 550 für diesen Pfad — beim nächsten Listing erneut prüfen
                 }
             }
-            if listing.load(Ordering::Relaxed) == LISTING_MLSD {
-                let lines = c.mlsd(Some(&dir)).map_err(|e| map_ftp(&dir, e))?;
-                return Ok(lines.iter().filter_map(|l| parse_mlsd_line(&dir, l)).collect());
-            }
             let lines = c.list(Some(&dir)).map_err(|e| map_ftp(&dir, e))?;
+            // Art und Größe kommen weiter aus LIST: Manche Server melden in
+            // MLSD einen Ordner-Symlink als „type=dir“ — rekursives Löschen
+            // liefe dann ins Link-Ziel. MLSD liefert nur die UTC-Zeiten.
+            let utc_times: HashMap<String, i64> = if listing.load(Ordering::Relaxed) == LISTING_MLSD {
+                match c.mlsd(Some(&dir)) {
+                    Ok(ml) => ml
+                        .iter()
+                        .filter_map(|l| parse_mlsd_line(&dir, l))
+                        .filter_map(|e| e.modified.map(|m| (e.name, m)))
+                        .collect(),
+                    Err(_) => {
+                        listing.store(LISTING_LIST, Ordering::Relaxed);
+                        HashMap::new()
+                    }
+                }
+            } else {
+                HashMap::new()
+            };
             let mut out = Vec::new();
             for line in lines {
                 let Ok(f) = suppaftp::list::File::try_from(line.as_str()) else {
@@ -395,7 +410,6 @@ impl Backend for FtpBackend {
                 }
                 out.push(Entry {
                     path: rpath::join(&dir, &name),
-                    name,
                     kind: if f.is_directory() {
                         EntryKind::Dir
                     } else if f.is_symlink() {
@@ -404,11 +418,13 @@ impl Backend for FtpBackend {
                         EntryKind::File
                     },
                     size: f.size() as u64,
-                    modified: f
-                        .modified()
-                        .duration_since(UNIX_EPOCH)
-                        .ok()
-                        .map(|d| d.as_secs() as i64),
+                    modified: utc_times.get(&name).copied().or_else(|| {
+                        f.modified()
+                            .duration_since(UNIX_EPOCH)
+                            .ok()
+                            .map(|d| d.as_secs() as i64)
+                    }),
+                    name,
                 });
             }
             Ok(out)

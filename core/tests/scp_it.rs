@@ -6,7 +6,7 @@
 //! ```sh
 //! docker run --rm -d --name fileport-scp -p 2223:2222 \
 //!   -e PUID=1000 -e PGID=1000 -e PASSWORD_ACCESS=true \
-//!   -e USER_NAME=foo -e USER_PASSWORD=pass -e SUDO_ACCESS=false \
+//!   -e TZ=Asia/Tokyo -e USER_NAME=foo -e USER_PASSWORD=pass -e SUDO_ACCESS=false \
 //!   lscr.io/linuxserver/openssh-server
 //! FILEPORT_IT=1 cargo test -p fileport-core --test scp_it
 //! docker stop fileport-scp
@@ -52,6 +52,14 @@ async fn scp_roundtrip_against_real_server() {
     assert_eq!(listing.len(), 1);
     assert_eq!(listing[0].name, "file ä.bin");
     assert_eq!(listing[0].size, data.len() as u64);
+    // Änderungszeit als echte UTC-Zeit — auch wenn der Server in einer
+    // anderen Zeitzone läuft (Container mit TZ=Asia/Tokyo starten).
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    let mtime = listing[0].modified.expect("Änderungszeit");
+    assert!((mtime - now).abs() < 600, "mtime {mtime} weicht von jetzt {now} ab");
 
     let dst = dir.path().join("dst.bin");
     let down = be

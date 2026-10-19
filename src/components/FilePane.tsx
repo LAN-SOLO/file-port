@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, Entry } from '../api';
-import { t } from '../i18n';
+import { locale, t } from '../i18n';
 import { isValidName, joinPath, parentPath } from '../paths';
 
 function formatSize(n: number): string {
@@ -17,7 +17,8 @@ function formatSize(n: number): string {
 
 function formatDate(secs: number | null): string {
   if (!secs) return '—';
-  return new Date(secs * 1000).toLocaleString(undefined, {
+  // Ortszeit des Rechners (Backends liefern Unix-Zeit/UTC), Format der UI-Sprache.
+  return new Date(secs * 1000).toLocaleString(locale, {
     year: '2-digit',
     month: '2-digit',
     day: '2-digit',
@@ -47,6 +48,8 @@ export interface FilePaneProps {
   onFileActivate?: (entry: Entry) => void;
   /** Aktuelle Einträge nach außen melden (z. B. für die Überschreiben-Rückfrage). */
   onEntries?: (entries: Entry[], dir: string) => void;
+  /** Zusätzliche Rückfrage-Zeile unter der Liste (z. B. „Trennen trotz Transfers?“). */
+  notice?: React.ReactNode;
 }
 
 export default function FilePane({
@@ -58,6 +61,7 @@ export default function FilePane({
   headExtra,
   onFileActivate,
   onEntries,
+  notice,
 }: FilePaneProps) {
   const [dir, setDir] = useState<string>('');
   const [pathInput, setPathInput] = useState('');
@@ -67,12 +71,17 @@ export default function FilePane({
   const [prompt, setPrompt] = useState<Prompt>(null);
   const [promptValue, setPromptValue] = useState('');
   const promptInput = useRef<HTMLInputElement>(null);
+  // Nur die zuletzt angeforderte Ansicht zählt: Antworten langsamer Server
+  // auf frühere Klicks dürfen den aktuellen Ordner nicht überschreiben.
+  const loadSeq = useRef(0);
 
   const load = useCallback(
     async (path: string) => {
+      const seq = ++loadSeq.current;
       setLoading(true);
       try {
         const list = await api.list(conn, path);
+        if (seq !== loadSeq.current) return;
         list.sort((a, b) =>
           a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind === 'dir' ? -1 : 1
         );
@@ -83,9 +92,9 @@ export default function FilePane({
         onSelect?.(null, path);
         onEntries?.(list, path);
       } catch (err) {
-        onError(String(err));
+        if (seq === loadSeq.current) onError(String(err));
       } finally {
-        setLoading(false);
+        if (seq === loadSeq.current) setLoading(false);
       }
     },
     [conn, onError, onSelect, onEntries]
@@ -154,7 +163,9 @@ export default function FilePane({
   return (
     <section className="pane">
       <div className="pane-head">
-        <span className="pane-title">{title}</span>
+        <span className="pane-title" title={title}>
+          {title}
+        </span>
         <span className="pane-count">{t.entries(entries.length)}</span>
         {headExtra}
       </div>
@@ -249,6 +260,8 @@ export default function FilePane({
           {t.del}
         </button>
       </div>
+
+      {notice}
 
       {prompt && (
         <div className="pane-prompt">

@@ -93,8 +93,10 @@ fn load_profiles(app: &tauri::AppHandle) -> Result<Vec<Profile>, String> {
     if !path.exists() {
         return Ok(Vec::new());
     }
-    let raw = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
-    serde_json::from_str(&raw).map_err(|e| format!("profiles.json: {e}"))
+    let raw = std::fs::read_to_string(&path).map_err(|e| fileport_core::io_text(&e))?;
+    // Von Hand in Windows-Notepad bearbeitet → UTF-8-BOM tolerieren.
+    let raw = raw.strip_prefix('\u{feff}').unwrap_or(&raw);
+    serde_json::from_str(raw).map_err(|e| format!("profiles.json: {e}"))
 }
 
 fn store_profiles(app: &tauri::AppHandle, profiles: &[Profile]) -> Result<(), String> {
@@ -103,12 +105,18 @@ fn store_profiles(app: &tauri::AppHandle, profiles: &[Profile]) -> Result<(), St
     // Atomar schreiben: erst Temp-Datei, dann umbenennen — ein Absturz mitten
     // im Schreiben hinterlässt nie eine halbe profiles.json.
     let tmp = path.with_extension("json.tmp");
-    std::fs::write(&tmp, raw).map_err(|e| e.to_string())?;
-    std::fs::rename(&tmp, &path).map_err(|e| {
+    std::fs::write(&tmp, raw).map_err(|e| fileport_core::io_text(&e))?;
+    // Windows: Virenscanner/Backup-Tools halten die Datei gern kurz offen.
+    fileport_core::rename_with_retry_blocking(&tmp, &path).map_err(|e| {
         let _ = std::fs::remove_file(&tmp);
-        e.to_string()
+        fileport_core::io_text(&e)
     })
 }
+
+/// Serialisiert alle Lese-Ändern-Schreiben-Zyklen auf profiles.json —
+/// sonst schriebe z. B. ein laufendes `connect` (merkt sich den Host-Key)
+/// ein inzwischen gelöschtes Profil mit seiner alten Liste zurück.
+static PROFILES_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 impl Protocol {
     fn is_ssh(&self) -> bool {
@@ -214,17 +222,18 @@ async fn secret_get(profile_id: String) -> Result<Option<String>, String> {
     .map_err(|e| e.to_string())?
 }
 
-async fn secret_delete(profile_id: String) {
-    let _ = tokio::task::spawn_blocking(move || {
-        if let Ok(entry) = secret_entry(&profile_id) {
-            let _ = entry.delete_credential();
-        }
+async fn secret_delete(profile_id: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || match secret_entry(&profile_id)?.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(e) => Err(format!("Schlüsselbund: {e}")),
     })
-    .await;
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
 pub async fn profiles_list(app: tauri::AppHandle) -> Result<Vec<Profile>, String> {
+    let _guard = PROFILES_LOCK.lock().await;
     load_profiles(&app)
 }
 
@@ -243,6 +252,7 @@ pub async fn profile_save(
     secret: Option<String>,
     clear_secret: Option<bool>,
 ) -> Result<Profile, String> {
+    let _guard = PROFILES_LOCK.lock().await;
     let mut profiles = load_profiles(&app)?;
     profile.name = profile.name.trim().to_string();
     if profile.name.is_empty() {
@@ -278,7 +288,7 @@ pub async fn profile_save(
     if let Some(secret) = secret.filter(|s| !s.is_empty()) {
         secret_set(profile.id.clone(), secret).await?;
     } else if clear_secret.unwrap_or(false) {
-        secret_delete(profile.id.clone()).await;
+        secret_delete(profile.id.clone()).await?;
     }
     match profiles.iter_mut().find(|p| p.id == profile.id) {
         Some(slot) => *slot = profile.clone(),
@@ -290,17 +300,20 @@ pub async fn profile_save(
 
 #[tauri::command]
 pub async fn profile_delete(app: tauri::AppHandle, id: String) -> Result<(), String> {
+    let _guard = PROFILES_LOCK.lock().await;
     let mut profiles = load_profiles(&app)?;
     profiles.retain(|p| p.id != id);
     store_profiles(&app, &profiles)?;
-    secret_delete(id).await;
-    Ok(())
+    // Fehler beim Entfernen aus dem Schlüsselbund melden statt verschlucken —
+    // das Profil ist dann weg, das Geheimnis aber noch da.
+    secret_delete(id).await
 }
 
 /// Gemerkten Host-Key eines Profils verwerfen — die nächste Verbindung
 /// fragt wieder nach (z. B. nach einer Server-Neuinstallation).
 #[tauri::command]
 pub async fn profile_reset_host_key(app: tauri::AppHandle, id: String) -> Result<(), String> {
+    let _guard = PROFILES_LOCK.lock().await;
     let mut profiles = load_profiles(&app)?;
     let profile = profiles
         .iter_mut()
@@ -370,11 +383,16 @@ pub async fn connect(
     id: String,
     trust_host_key: Option<String>,
 ) -> Result<ConnectResult, String> {
-    let mut profiles = load_profiles(&app)?;
-    let profile = profiles
-        .iter_mut()
-        .find(|p| p.id == id)
-        .ok_or("Profil nicht gefunden")?;
+    // Nur kurz unter der Sperre lesen — der Verbindungsaufbau selbst darf
+    // Speichern/Löschen anderer Profile nicht blockieren.
+    let mut profile = {
+        let _guard = PROFILES_LOCK.lock().await;
+        load_profiles(&app)?
+            .into_iter()
+            .find(|p| p.id == id)
+            .ok_or("Profil nicht gefunden")?
+    };
+    let profile = &mut profile;
     let trust = trust_host_key
         .map(|k| k.trim().to_string())
         .filter(|k| !k.is_empty());
@@ -453,8 +471,15 @@ pub async fn connect(
             match connected {
                 Ok((be, key)) => {
                     if !key.is_empty() && key.trim() != profile.host_key.trim() {
+                        // Frisch einlesen und nur den Host-Key setzen: wurde das
+                        // Profil inzwischen gelöscht, bleibt es gelöscht.
+                        let _guard = PROFILES_LOCK.lock().await;
+                        let mut current = load_profiles(&app)?;
+                        if let Some(p) = current.iter_mut().find(|p| p.id == profile.id) {
+                            p.host_key = key.clone();
+                            store_profiles(&app, &current)?;
+                        }
                         profile.host_key = key;
-                        store_profiles(&app, &profiles)?;
                     }
                     be
                 }

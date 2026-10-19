@@ -114,9 +114,14 @@ impl ObjectBackend {
     }
 
     pub async fn connect_gcs(cfg: GcsConfig) -> Result<Self, FpError> {
+        // Selbst lesen statt with_service_account_path: Datei aus einem
+        // Windows-Editor kann ein UTF-8-BOM tragen, an dem der JSON-Parser scheitert.
+        let raw = tokio::fs::read_to_string(&cfg.key_file).await.map_err(|e| {
+            FpError::Connect(format!("Schlüsseldatei: {}", crate::error::io_text(&e)))
+        })?;
         let store = GoogleCloudStorageBuilder::new()
             .with_bucket_name(&cfg.bucket)
-            .with_service_account_path(&cfg.key_file)
+            .with_service_account_key(crate::ssh::clean_key_text(&raw))
             .build()
             .map_err(|e| FpError::Connect(e.to_string()))?;
         Self::verify(ObjectBackend {

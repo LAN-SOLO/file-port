@@ -23,6 +23,23 @@ pub enum SshAuth {
     },
 }
 
+/// Text einer Schlüsseldatei (SSH-Key, GCS-JSON) ohne UTF-8-BOM und mit
+/// Unix-Zeilenenden — Windows-Editoren (Notepad) speichern gern mit BOM/CRLF.
+pub(crate) fn clean_key_text(raw: &str) -> String {
+    raw.strip_prefix('\u{feff}').unwrap_or(raw).replace("\r\n", "\n")
+}
+
+/// SSH-Schlüssel laden — verträgt BOM und CRLF aus Windows-Editoren.
+fn load_key_file(
+    path: &std::path::Path,
+    passphrase: Option<&str>,
+) -> Result<russh::keys::PrivateKey, FpError> {
+    let raw = std::fs::read_to_string(path)
+        .map_err(|e| FpError::Auth(format!("Schlüsseldatei: {}", crate::error::io_text(&e))))?;
+    russh::keys::decode_secret_key(&clean_key_text(&raw), passphrase)
+        .map_err(|e| FpError::Auth(format!("Schlüsseldatei: {e}")))
+}
+
 pub struct SshConfig {
     pub host: String,
     pub port: u16,
@@ -137,8 +154,7 @@ pub(crate) async fn connect_ssh(cfg: &SshConfig) -> Result<SshSession, FpError> 
             .await
             .map_err(|e| FpError::Auth(e.to_string()))?,
         SshAuth::KeyFile { path, passphrase } => {
-            let key = russh::keys::load_secret_key(path, passphrase.as_deref())
-                .map_err(|e| FpError::Auth(format!("Schlüsseldatei: {e}")))?;
+            let key = load_key_file(path, passphrase.as_deref())?;
             let hash: Option<HashAlg> = handle
                 .best_supported_rsa_hash()
                 .await
@@ -233,7 +249,10 @@ impl SshSession {
         // Abschließender Slash: so listet ls auch den Inhalt von
         // Verzeichnis-Symlinks statt nur den Link selbst.
         let target = format!("{}/", path.trim_end_matches('/'));
-        let cmd = format!("LC_ALL=C ls -la -- {}", shell_quote(&target));
+        // TZ=UTC0: ls zeigt sonst die Ortszeit des Servers, der Parser liest
+        // die Zeilen aber als UTC — Änderungszeiten wären um den Versatz der
+        // Server-Zeitzone verschoben (POSIX-TZ-Syntax, versteht jede libc).
+        let cmd = format!("TZ=UTC0 LC_ALL=C ls -la -- {}", shell_quote(&target));
         let out = self.run_ok(&cmd, path).await?;
         let mut entries = Vec::new();
         for line in String::from_utf8_lossy(&out).lines() {
@@ -302,5 +321,38 @@ impl SshSession {
             .trim()
             .parse()
             .map_err(|_| FpError::Protocol(format!("{path}: unlesbare Dateigröße")))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Wegwerf-Schlüssel nur für diesen Test (ed25519, ohne Passphrase).
+    const TEST_KEY: &str = "-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
+QyNTUxOQAAACD3Ggh8pS7IYYLBFMvMD/iUMPr+kWWhyYyZr8DD//rtJwAAAIgLE36aCxN+
+mgAAAAtzc2gtZWQyNTUxOQAAACD3Ggh8pS7IYYLBFMvMD/iUMPr+kWWhyYyZr8DD//rtJw
+AAAEDpa2SR4h5qUzs2dV7Z8Hn3MKJ+S3cC6hbimYw29qcGXfcaCHylLshhgsEUy8wP+JQw
++v6RZaHJjJmvwMP/+u0nAAAABHRlc3QB
+-----END OPENSSH PRIVATE KEY-----\n";
+
+    #[test]
+    fn key_file_with_bom_and_crlf_loads() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("id_ed25519 mit Leerzeichen");
+        let windows = format!("\u{feff}{}", TEST_KEY.replace('\n', "\r\n"));
+        std::fs::write(&path, windows).unwrap();
+        assert!(load_key_file(&path, None).is_ok());
+        std::fs::write(&path, TEST_KEY).unwrap();
+        assert!(load_key_file(&path, None).is_ok());
+        let missing = load_key_file(&dir.path().join("fehlt"), None).unwrap_err();
+        assert!(missing.to_string().contains("Schlüsseldatei: Datei oder Ordner nicht gefunden"));
+    }
+
+    #[test]
+    fn clean_key_text_strips_bom_only_at_start() {
+        assert_eq!(clean_key_text("\u{feff}{\"a\":1}\r\n"), "{\"a\":1}\n");
+        assert_eq!(clean_key_text("x\u{feff}"), "x\u{feff}");
     }
 }

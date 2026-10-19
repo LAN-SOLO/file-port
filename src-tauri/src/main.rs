@@ -11,7 +11,10 @@ use serde::Serialize;
 pub struct UpdateInfoDto {
     pub version: String,
     pub notes: Option<String>,
-    pub date: Option<String>,
+    /// Veröffentlichung als Unix-Zeit (Sekunden, UTC) — die UI formatiert in
+    /// der lokalen Zeitzone. `OffsetDateTime::to_string()` („2026-10-01
+    /// 12:00:00.0 +00:00:00") könnte `new Date()` nicht lesen.
+    pub date: Option<i64>,
 }
 
 /// Check GitHub Releases (latest.json) for a newer version. Returns None when
@@ -24,7 +27,7 @@ async fn check_update(app: tauri::AppHandle) -> Result<Option<UpdateInfoDto>, St
         Ok(Some(update)) => Ok(Some(UpdateInfoDto {
             version: update.version.clone(),
             notes: update.body.clone(),
-            date: update.date.map(|d| d.to_string()),
+            date: update.date.map(|d| d.unix_timestamp()),
         })),
         Ok(None) => Ok(None),
         Err(e) => Err(format!("Update-Prüfung fehlgeschlagen: {e}")),

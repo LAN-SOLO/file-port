@@ -38,6 +38,10 @@ interface RemotePaneProps {
   onError: (msg: string) => void;
   onInfo: (msg: string) => void;
   onConnected: (conn: number | null) => void;
+  /** Anzahl laufender/wartender Transfers über eine Verbindung. */
+  openTransfers: (conn: number) => number;
+  /** Bricht alle offenen Transfers einer Verbindung ab (vor dem Trennen). */
+  onCancelTransfers: (conn: number) => void;
   paneProps: Omit<FilePaneProps, 'conn' | 'title'>;
 }
 
@@ -45,7 +49,14 @@ interface RemotePaneProps {
  * Rechte Seite des Zwei-Fenster-Layouts: Verbindungs-Manager solange
  * getrennt, danach die Datei-Ansicht der Gegenstelle.
  */
-export default function RemotePane({ onError, onInfo, onConnected, paneProps }: RemotePaneProps) {
+export default function RemotePane({
+  onError,
+  onInfo,
+  onConnected,
+  openTransfers,
+  onCancelTransfers,
+  paneProps,
+}: RemotePaneProps) {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [form, setForm] = useState<Profile | null>(null);
   const [secret, setSecret] = useState('');
@@ -55,6 +66,7 @@ export default function RemotePane({ onError, onInfo, onConnected, paneProps }: 
   const [confirmDelete, setConfirmDelete] = useState<Profile | null>(null);
   const [hostKeyAsk, setHostKeyAsk] = useState<{ id: string; host: string; prompt: HostKeyPrompt } | null>(null);
   const [storedFp, setStoredFp] = useState('');
+  const [confirmDisconnect, setConfirmDisconnect] = useState(0);
 
   const loadProfiles = () => {
     api.profiles().then(setProfiles).catch((err) => onError(String(err)));
@@ -82,17 +94,30 @@ export default function RemotePane({ onError, onInfo, onConnected, paneProps }: 
     }
   };
 
-  const doDisconnect = async () => {
-    if (session) {
-      await api.disconnect(session.conn).catch(() => {});
-      setSession(null);
-      onConnected(null);
+  const doDisconnect = async (force = false) => {
+    if (!session) return;
+    // Laufende/wartende Transfers nicht stillschweigend ins Leere laufen
+    // lassen: erst nachfragen, dann gezielt abbrechen.
+    const open = openTransfers(session.conn);
+    if (open > 0 && !force) {
+      setConfirmDisconnect(open);
+      return;
     }
+    setConfirmDisconnect(0);
+    if (open > 0) onCancelTransfers(session.conn);
+    try {
+      await api.disconnect(session.conn);
+    } catch (err) {
+      // Trennen scheitert nur, wenn die Verbindung schon weg ist — melden, UI trotzdem zurücksetzen.
+      onError(String(err));
+    }
+    setSession(null);
+    onConnected(null);
   };
 
   const submitForm = async (connectAfter: boolean) => {
     if (!form) return;
-    if (!form.name.trim()) return onError(t.fName + '?');
+    if (!form.name.trim()) return onError(t.nameRequired);
     setBusy('form');
     try {
       const saved = await api.saveProfile(form, secret || null, clearSecret && !secret);
@@ -147,9 +172,20 @@ export default function RemotePane({ onError, onInfo, onConnected, paneProps }: 
         conn={session.conn}
         title={session.label}
         headExtra={
-          <button className="small" onClick={doDisconnect}>
+          <button className="small" onClick={() => doDisconnect()}>
             {t.disconnect}
           </button>
+        }
+        notice={
+          confirmDisconnect > 0 && (
+            <div className="pane-prompt">
+              <span className="prompt-text">{t.disconnectBusy(confirmDisconnect)}</span>
+              <button className="primary" onClick={() => doDisconnect(true)}>
+                {t.disconnectAnyway}
+              </button>
+              <button onClick={() => setConfirmDisconnect(0)}>{t.cancel}</button>
+            </div>
+          )
         }
         {...paneProps}
       />
@@ -187,7 +223,9 @@ export default function RemotePane({ onError, onInfo, onConnected, paneProps }: 
         {profiles.map((p) => (
           <div className="profile-row" key={p.id}>
             <span className="proto-badge">{normalizeProtocol(p.protocol)}</span>
-            <span className="profile-name">{p.name}</span>
+            <span className="profile-name" title={p.name}>
+              {p.name}
+            </span>
             <span className="profile-target">
               {p.protocol === 'webdav'
                 ? p.base_url

@@ -9,7 +9,8 @@ import {
   TransferProgressEvent,
   UpdateInfo,
 } from './api';
-import { t } from './i18n';
+import { errText, t } from './i18n';
+import { isExistsError } from './errors';
 import { joinPath } from './paths';
 import { applyTheme, readTheme, Theme } from './theme';
 import FilePane from './components/FilePane';
@@ -43,7 +44,8 @@ export default function App() {
   const [pendingOverwrite, setPendingOverwrite] = useState<QItem | null>(null);
 
   const toast = useCallback((msg: string, isError = false) => {
-    setToastMsg({ msg, err: isError });
+    // Fehlertexte der Engine sind deutsch — in der UI-Sprache anzeigen.
+    setToastMsg({ msg: isError ? errText(msg) : msg, err: isError });
     window.clearTimeout(toastTimer.current);
     toastTimer.current = window.setTimeout(() => setToastMsg(null), 5000);
   }, []);
@@ -123,30 +125,32 @@ export default function App() {
     // Die Transfer-ID ist der Warteschlangen-Schlüssel: Events, die vor der
     // Antwort des Commands eintreffen, finden ihren Eintrag trotzdem.
     api
-      .transferStart(next.key, next.direction, next.conn, next.remote, next.local)
+      .transferStart(next.key, next.direction, next.conn, next.remote, next.local, next.name, !!next.overwrite)
       .then(() =>
         setQueue((qs) =>
           qs.map((q) => (q.key === next.key && q.status === 'starting' ? { ...q, status: 'running' } : q))
         )
       )
-      .catch((err) =>
+      .catch((err) => {
+        // Ziel ist inzwischen entstanden (z. B. durch einen früheren Eintrag
+        // der Warteschlange) — jetzt doch rückfragen statt still zu ersetzen.
+        if (!next.overwrite && isExistsError(err)) {
+          setQueue((qs) => qs.filter((q) => q.key !== next.key));
+          setPendingOverwrite({ ...next, status: 'queued' });
+          return;
+        }
         setQueue((qs) =>
           qs.map((q) => (q.key === next.key ? { ...q, status: 'error', error: String(err) } : q))
-        )
-      );
+        );
+      });
   }, [queue]);
 
   const enqueue = (direction: 'download' | 'upload', explicit?: Entry) => {
     if (remoteConn === null) return;
     const src = explicit ?? (direction === 'upload' ? localSel.entry : remoteSel.entry);
     if (!src || src.kind === 'dir') return;
-    // Server-Namen mit Pfadtrennern (z. B. „a\\b“ von einem Linux-Server) nie
-    // in einen lokalen Pfad einbauen — sie würden unter Windows Unterordner
-    // adressieren.
-    if (direction === 'download' && /[/\\]/.test(src.name)) {
-      toast(`${t.invalidName} (${src.name})`, true);
-      return;
-    }
+    // Server-Namen (z. B. „a\\b“, „CON.txt“, „a:b“) prüft das Backend
+    // plattformgerecht — unzulässige Namen enden als Fehler in der Warteschlange.
     const targetName = src.name.toLowerCase();
     const exists =
       direction === 'upload'
@@ -161,7 +165,8 @@ export default function App() {
       total: src.size || null,
       conn: remoteConn,
       remote: direction === 'upload' ? joinPath(remoteSel.dir, src.name) : src.path,
-      local: direction === 'upload' ? src.path : joinPath(localSel.dir, src.name),
+      // Download: Zielordner — den Dateinamen hängt das Backend nach Prüfung an.
+      local: direction === 'upload' ? src.path : localSel.dir,
     };
     if (exists) setPendingOverwrite(item);
     else setQueue((qs) => [...qs, item]);
@@ -177,6 +182,15 @@ export default function App() {
     }
   };
 
+  /** Offene Transfers (laufend/wartend) einer Verbindung. */
+  const openTransfers = (conn: number) =>
+    queue.filter(
+      (q) => q.conn === conn && (q.status === 'queued' || q.status === 'starting' || q.status === 'running')
+    );
+
+  /** Vor dem Trennen: alle offenen Transfers dieser Verbindung abbrechen. */
+  const cancelTransfersOf = (conn: number) => openTransfers(conn).forEach(cancelItem);
+
   const clearFinished = () =>
     setQueue((qs) => qs.filter((q) => q.status !== 'done' && q.status !== 'error' && q.status !== 'cancelled'));
 
@@ -188,7 +202,7 @@ export default function App() {
       if (u) setShowUpdateModal(true);
       else toast(t.upToDate);
     } catch (err) {
-      toast(String(err), true);
+      toast(errText(err), true);
     } finally {
       setChecking(false);
     }
@@ -268,9 +282,12 @@ export default function App() {
         <RemotePane
           onError={onPaneError}
           onInfo={toast}
+          openTransfers={(conn) => openTransfers(conn).length}
+          onCancelTransfers={cancelTransfersOf}
           onConnected={(conn) => {
             setRemoteConn(conn);
             if (conn === null) {
+              setPendingOverwrite(null);
               setRemoteSel({ entry: null, dir: '' });
               remoteNames.current = new Set();
             }
@@ -307,7 +324,7 @@ export default function App() {
                 onClick={() => {
                   const item = pendingOverwrite;
                   setPendingOverwrite(null);
-                  setQueue((qs) => [...qs, item]);
+                  setQueue((qs) => [...qs, { ...item, overwrite: true }]);
                 }}
               >
                 {t.overwriteBtn}

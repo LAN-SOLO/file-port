@@ -22,9 +22,9 @@ mod transfer;
 mod webdav;
 
 pub use backend::{Backend, Entry, EntryKind};
-pub use error::FpError;
+pub use error::{io_text, FpError};
 pub use ftp::{FtpBackend, FtpConfig, FtpSecurity};
-pub use local::LocalBackend;
+pub use local::{is_transient_lock, rename_with_retry, rename_with_retry_blocking, LocalBackend};
 pub use objstore::{AzureConfig, GcsConfig, ObjectBackend, S3Config};
 pub use rpath::{file_name as rfile_name, join as rjoin, parent as rparent};
 pub use rsyncssh::RsyncBackend;

@@ -1,3 +1,5 @@
+import { translateError } from './errors';
+
 /** UI strings (de/en) — grows with the real UI. */
 const de = {
   subtitle: 'Dateitransfer für jedes Protokoll',
@@ -108,6 +110,10 @@ const de = {
   hostKeyForget: 'Host-Key vergessen',
   hostKeyForgotten: 'Host-Key vergessen — die nächste Verbindung fragt neu nach.',
   clearSecret: 'Gespeichertes Geheimnis löschen',
+  disconnectBusy: (n: number) =>
+    `${n === 1 ? 'Ein Transfer läuft' : `${n} Transfers laufen`} oder ${n === 1 ? 'wartet' : 'warten'} noch über diese Verbindung. Abbrechen und trennen?`,
+  disconnectAnyway: 'Abbrechen & trennen',
+  nameRequired: 'Bitte geben Sie der Verbindung einen Namen.',
 
   pSftp: 'SFTP (SSH)',
   pScp: 'SCP (SSH)',
@@ -230,6 +236,10 @@ const en: typeof de = {
   hostKeyForget: 'Forget host key',
   hostKeyForgotten: 'Host key forgotten — the next connection will ask again.',
   clearSecret: 'Delete stored secret',
+  disconnectBusy: (n: number) =>
+    `${n === 1 ? 'One transfer is' : `${n} transfers are`} still running or queued on this connection. Cancel and disconnect?`,
+  disconnectAnyway: 'Cancel & disconnect',
+  nameRequired: 'Please give the connection a name.',
 
   pSftp: 'SFTP (SSH)',
   pScp: 'SCP (SSH)',
@@ -243,4 +253,16 @@ const en: typeof de = {
   pGcs: 'Google Cloud Storage',
 };
 
-export const t = navigator.language.toLowerCase().startsWith('de') ? de : en;
+/** UI-Sprache aus der Systemsprache des WebViews (navigator.language) —
+ *  unter macOS (Finder/Dock) und Windows ist LANG nicht gesetzt, die
+ *  WebView kennt die Systemsprache aber immer. */
+export const lang: 'de' | 'en' =
+  typeof navigator !== 'undefined' && (navigator.language || '').toLowerCase().startsWith('de')
+    ? 'de'
+    : 'en';
+export const t = lang === 'de' ? de : en;
+/** Locale für Datums-/Zahlformate passend zur UI-Sprache. */
+export const locale = lang === 'de' ? 'de-DE' : 'en-GB';
+
+/** Fehler aus invoke/catch als Text in der UI-Sprache. */
+export const errText = (err: unknown) => translateError(err, lang);

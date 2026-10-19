@@ -25,3 +25,7 @@ keyring = { version = "4.1.6", features = ["apple-native-keyring-store", "window
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
+
+[dev-dependencies]
+# bereits über fileport-core (dev) im Lockfile — keine neue Crate
+tempfile = "3"

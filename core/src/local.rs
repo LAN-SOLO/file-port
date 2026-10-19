@@ -127,7 +127,53 @@ impl Backend for LocalBackend {
     }
 
     async fn rename(&self, from: &str, to: &str) -> Result<(), FpError> {
-        tokio::fs::rename(from, to).await.map_err(|e| map_io(from, e))
+        rename_with_retry(Path::new(from), Path::new(to))
+            .await
+            .map_err(|e| map_io(from, e))
+    }
+}
+
+/// Unter Windows kurz gesperrt: Virenscanner, OneDrive, Indexdienst oder
+/// Office halten frisch geschriebene Dateien oft für Sekundenbruchteile
+/// offen — `MoveFileEx` scheitert dann mit Sharing-/Lock-Violation
+/// (32/33) oder „Zugriff verweigert" (5).
+pub fn is_transient_lock(e: &std::io::Error) -> bool {
+    cfg!(windows) && matches!(e.raw_os_error(), Some(5) | Some(32) | Some(33))
+}
+
+/// Umbenennen (ersetzt ein vorhandenes Ziel) mit Wiederholung bei
+/// vorübergehenden Sperren unter Windows — insgesamt höchstens ~3 s.
+/// Unter macOS/Linux genau ein Versuch.
+pub async fn rename_with_retry(from: &Path, to: &Path) -> std::io::Result<()> {
+    let mut delay_ms = 25u64;
+    let mut waited = 0u64;
+    loop {
+        match tokio::fs::rename(from, to).await {
+            Ok(()) => return Ok(()),
+            Err(e) if is_transient_lock(&e) && waited < 3000 => {
+                tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                waited += delay_ms;
+                delay_ms = (delay_ms * 2).min(500);
+            }
+            Err(e) => return Err(e),
+        }
+    }
+}
+
+/// Synchrone Variante für Stellen außerhalb von async (z. B. profiles.json).
+pub fn rename_with_retry_blocking(from: &Path, to: &Path) -> std::io::Result<()> {
+    let mut delay_ms = 25u64;
+    let mut waited = 0u64;
+    loop {
+        match std::fs::rename(from, to) {
+            Ok(()) => return Ok(()),
+            Err(e) if is_transient_lock(&e) && waited < 3000 => {
+                std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+                waited += delay_ms;
+                delay_ms = (delay_ms * 2).min(500);
+            }
+            Err(e) => return Err(e),
+        }
     }
 }
 
@@ -214,6 +260,19 @@ mod tests {
         be.remove(&renamed, false).await.unwrap();
         be.remove(&sub, true).await.unwrap();
         assert!(be.list(&root).await.unwrap().is_empty());
+
+        // Ersetzen per rename_with_retry (Teildatei → Ziel)
+        let a = dir.path().join("a.part");
+        let b = dir.path().join("b.bin");
+        tokio::fs::write(&a, b"neu").await.unwrap();
+        tokio::fs::write(&b, b"alt").await.unwrap();
+        rename_with_retry(&a, &b).await.unwrap();
+        assert_eq!(tokio::fs::read(&b).await.unwrap(), b"neu");
+        assert!(!a.exists());
+        rename_with_retry_blocking(&b, &a).unwrap();
+        assert!(a.exists() && !b.exists());
+        tokio::fs::remove_file(&a).await.unwrap();
+        assert!(!is_transient_lock(&std::io::Error::from(std::io::ErrorKind::NotFound)));
 
         let err = be.list(&dir.path().join("nope").display().to_string()).await.unwrap_err();
         assert!(matches!(err, FpError::NotFound(_)));

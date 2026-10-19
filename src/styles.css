@@ -196,6 +196,7 @@ button.theme-toggle:hover:not(:disabled) {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
+  gap: 8px;
   padding: 8px 12px 6px;
 }
 
@@ -204,12 +205,23 @@ button.theme-toggle:hover:not(:disabled) {
   font-size: 13px;
   font-weight: 700;
   color: var(--accent);
+  /* lange Verbindungs-Labels (sftp://user@host…) kürzen statt überlappen */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .pane-count {
   font-family: var(--mono);
   font-size: 11px;
   color: var(--faint);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.pane-head > button {
+  flex-shrink: 0;
 }
 
 .pane-toolbar {
@@ -335,6 +347,7 @@ button.danger:hover:not(:disabled) {
 
 .pane-prompt {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   align-items: center;
   padding: 8px 10px;
@@ -360,13 +373,19 @@ button.danger:hover:not(:disabled) {
 }
 
 .pane-prompt .prompt-text {
-  flex: 1;
+  /* im schmalen Fenster steht der Text allein, die Knöpfe rutschen darunter */
+  flex: 1 1 220px;
   font-size: 12.5px;
+}
+
+.pane-prompt input {
+  flex-basis: 160px;
 }
 
 .pane-prompt button {
   font-size: 12px;
   padding: 5px 11px;
+  white-space: nowrap;
 }
 
 button.small {
@@ -469,6 +488,15 @@ button.small {
 
 .conn-form .frow label {
   flex: 1;
+  /* sonst erzwingt die längste <option> die Breite — im schmalen Fenster
+     (800 px) lief das Formular seitlich aus der Pane */
+  min-width: 0;
+}
+
+.conn-form input:not([type='checkbox']),
+.conn-form select {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .conn-form .frow label.short {

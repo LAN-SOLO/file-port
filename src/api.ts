@@ -4,7 +4,8 @@ import { invoke } from '@tauri-apps/api/core';
 export interface UpdateInfo {
   version: string;
   notes: string | null;
-  date: string | null;
+  /** Veröffentlichung als Unix-Zeit (Sekunden). */
+  date: number | null;
 }
 
 /** Ein Verzeichniseintrag, wie ihn jedes Backend liefert (fileport-core). */
@@ -115,13 +116,17 @@ export const api = {
   disconnect: (conn: number) => invoke<void>('disconnect', { conn }),
 
   /** `id` vergibt die UI (Warteschlangen-Schlüssel) — Events tragen dieselbe ID. */
+  /** Download: `local` ist der Zielordner, `name` der Dateiname (prüft das
+   *  Backend). Ohne `overwrite` scheitert der Start, wenn das Ziel existiert. */
   transferStart: (
     id: number,
     direction: 'download' | 'upload',
     conn: number,
     remote: string,
-    local: string
-  ) => invoke<number>('transfer_start', { id, direction, conn, remote, local }),
+    local: string,
+    name: string,
+    overwrite: boolean
+  ) => invoke<number>('transfer_start', { id, direction, conn, remote, local, name, overwrite }),
   transferCancel: (id: number) => invoke<void>('transfer_cancel', { id }),
 };
 

@@ -1,4 +1,4 @@
-import { t } from '../i18n';
+import { errText, t } from '../i18n';
 
 export type QStatus = 'queued' | 'starting' | 'running' | 'done' | 'error' | 'cancelled';
 
@@ -14,7 +14,10 @@ export interface QItem {
   /** Transfer-Parameter für den sequenziellen Abarbeiter. */
   conn: number;
   remote: string;
+  /** Upload: Quelldatei. Download: lokaler Zielordner (Name = `name`). */
   local: string;
+  /** Vom Nutzer bestätigt: vorhandenes Ziel ersetzen. */
+  overwrite?: boolean;
 }
 
 function pct(item: QItem): number {
@@ -51,12 +54,14 @@ export default function QueuePanel({
             <span className="qdir" aria-hidden="true">
               {item.direction === 'upload' ? '→' : '←'}
             </span>
-            <span className="qname">{item.name}</span>
-            <span className="qstatus">
+            <span className="qname" title={item.name}>
+              {item.name}
+            </span>
+            <span className="qstatus" title={item.status === 'error' && item.error ? errText(item.error) : undefined}>
               {item.status === 'queued' && t.qQueued}
               {(item.status === 'running' || item.status === 'starting') && `${pct(item)} %`}
               {item.status === 'done' && t.qDone}
-              {item.status === 'error' && (item.error ?? t.qError)}
+              {item.status === 'error' && (item.error ? errText(item.error) : t.qError)}
               {item.status === 'cancelled' && t.qCancelled}
             </span>
             <div className="qbar">

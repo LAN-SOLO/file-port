@@ -14,7 +14,13 @@ tokio-util = { version = "0.7", features = ["io"] }
 serde = { version = "1", features = ["derive"] }
 russh = "0.62.7"
 russh-sftp = "2.4.0"
-suppaftp = { version = "10.0.2", features = ["native-tls", "deprecated"] }
+# rustls statt native-tls: TLS-Session-Wiederaufnahme auf dem Datenkanal
+# (vsftpd/ProFTPD/FileZilla Server verlangen sie standardmäßig). rustls,
+# aws-lc-rs und rustls-platform-verifier stecken bereits über reqwest im
+# Abhängigkeitsbaum — keine neuen Crates.
+suppaftp = { version = "10.0.2", features = ["rustls-aws-lc-rs", "deprecated"] }
+rustls = { version = "0.23", default-features = false, features = ["std", "tls12", "aws_lc_rs"] }
+rustls-platform-verifier = "0.7"
 reqwest = { version = "0.13.4", default-features = false, features = ["rustls", "stream"] }
 quick-xml = "0.41.0"
 httpdate = "1.0.3"

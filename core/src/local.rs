@@ -106,7 +106,23 @@ impl Backend for LocalBackend {
         if is_dir {
             tokio::fs::remove_dir_all(path).await.map_err(|e| map_io(path, e))
         } else {
-            tokio::fs::remove_file(path).await.map_err(|e| map_io(path, e))
+            match tokio::fs::remove_file(path).await {
+                Ok(()) => Ok(()),
+                // Windows: Verzeichnis-Symlinks und Junctions sind Verzeichnis-
+                // Einträge — sie gehen nur mit remove_dir weg (das Ziel bleibt).
+                Err(e) if cfg!(windows) => {
+                    let is_link = tokio::fs::symlink_metadata(path)
+                        .await
+                        .map(|m| m.file_type().is_symlink() || m.is_dir())
+                        .unwrap_or(false);
+                    if is_link {
+                        tokio::fs::remove_dir(path).await.map_err(|e| map_io(path, e))
+                    } else {
+                        Err(map_io(path, e))
+                    }
+                }
+                Err(e) => Err(map_io(path, e)),
+            }
         }
     }
 

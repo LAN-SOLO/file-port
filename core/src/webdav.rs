@@ -66,8 +66,22 @@ fn map_status(path: &str, status: StatusCode) -> FpError {
 
 impl WebdavBackend {
     pub async fn connect(cfg: WebdavConfig) -> Result<Self, FpError> {
+        // Weiterleitungen nur innerhalb von HTTPS folgen (wenn die Basis-URL
+        // HTTPS ist) — ein Redirect auf http:// würde Daten im Klartext senden.
+        let https_only = cfg.base_url.starts_with("https://");
+        let policy = reqwest::redirect::Policy::custom(move |attempt| {
+            if attempt.previous().len() >= 10 {
+                attempt.error("zu viele Weiterleitungen")
+            } else if https_only && attempt.url().scheme() != "https" {
+                attempt.error("Weiterleitung auf unverschlüsseltes HTTP abgelehnt")
+            } else {
+                attempt.follow()
+            }
+        });
         let client = reqwest::Client::builder()
             .danger_accept_invalid_certs(cfg.accept_invalid_certs)
+            .redirect(policy)
+            .connect_timeout(std::time::Duration::from_secs(20))
             .build()
             .map_err(|e| FpError::Connect(e.to_string()))?;
         let base = cfg.base_url.trim_end_matches('/').to_string();
@@ -106,7 +120,10 @@ impl WebdavBackend {
 /// Zieht aus einem `multistatus`-PROPFIND die Einträge unterhalb von `dir`.
 fn parse_propfind(xml: &str, base_path: &str, dir: &str) -> Result<Vec<Entry>, FpError> {
     let mut reader = quick_xml::Reader::from_str(xml);
-    reader.config_mut().trim_text(true);
+    // Kein trim_text: Entitäten (`&amp;`) teilen Text in mehrere Events —
+    // getrimmt würden Leerzeichen um sie herum verschwinden. Getrimmt wird
+    // erst der zusammengesetzte Wert.
+    reader.config_mut().trim_text(false);
 
     #[derive(Default)]
     struct Cur {
@@ -119,11 +136,12 @@ fn parse_propfind(xml: &str, base_path: &str, dir: &str) -> Result<Vec<Entry>, F
     let mut entries = Vec::new();
     let mut cur: Option<Cur> = None;
     let mut text_target: Option<&'static str> = None;
+    let mut text = String::new();
     let mut buf = Vec::new();
 
     loop {
         match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
+            Ok(Event::Start(e)) => {
                 let name = e.local_name();
                 let tag = String::from_utf8_lossy(name.as_ref()).to_lowercase();
                 match tag.as_str() {
@@ -138,24 +156,69 @@ fn parse_propfind(xml: &str, base_path: &str, dir: &str) -> Result<Vec<Entry>, F
                     "getlastmodified" => text_target = Some("modified"),
                     _ => {}
                 }
+                text.clear();
             }
-            Ok(Event::Text(t)) => {
-                if let (Some(target), Some(c)) = (text_target, cur.as_mut()) {
-                    let text = t.decode().unwrap_or_default().to_string();
-                    match target {
-                        "href" => c.href = text,
-                        "size" => c.size = text.trim().parse().unwrap_or(0),
-                        "modified" => {
-                            c.modified = httpdate::parse_http_date(text.trim()).ok().and_then(|t| {
-                                t.duration_since(std::time::UNIX_EPOCH)
-                                    .ok()
-                                    .map(|d| d.as_secs() as i64)
-                            })
-                        }
-                        _ => {}
+            Ok(Event::Empty(e)) => {
+                let name = e.local_name();
+                if name.as_ref().eq_ignore_ascii_case(b"collection") {
+                    if let Some(c) = cur.as_mut() {
+                        c.is_dir = true;
                     }
                 }
-                text_target = None;
+            }
+            Ok(Event::Text(t)) => {
+                if text_target.is_some() {
+                    text.push_str(&t.decode().unwrap_or_default());
+                }
+            }
+            Ok(Event::CData(t)) => {
+                if text_target.is_some() {
+                    text.push_str(&String::from_utf8_lossy(&t.into_inner()));
+                }
+            }
+            Ok(Event::GeneralRef(r)) => {
+                if text_target.is_some() {
+                    if let Ok(Some(ch)) = r.resolve_char_ref() {
+                        text.push(ch);
+                    } else {
+                        let name = r.decode().unwrap_or_default();
+                        match quick_xml::escape::resolve_predefined_entity(&name) {
+                            Some(v) => text.push_str(v),
+                            None => {
+                                text.push('&');
+                                text.push_str(&name);
+                                text.push(';');
+                            }
+                        }
+                    }
+                }
+            }
+            Ok(Event::End(e)) if text_target.is_some() => {
+                let local = e.local_name();
+                let tag = String::from_utf8_lossy(local.as_ref()).to_lowercase();
+                let target = text_target.unwrap();
+                let matches = matches!(
+                    (target, tag.as_str()),
+                    ("href", "href") | ("size", "getcontentlength") | ("modified", "getlastmodified")
+                );
+                if matches {
+                    if let Some(c) = cur.as_mut() {
+                        let value = text.trim();
+                        match target {
+                            "href" => c.href = value.to_string(),
+                            "size" => c.size = value.parse().unwrap_or(0),
+                            _ => {
+                                c.modified = httpdate::parse_http_date(value).ok().and_then(|t| {
+                                    t.duration_since(std::time::UNIX_EPOCH)
+                                        .ok()
+                                        .map(|d| d.as_secs() as i64)
+                                })
+                            }
+                        }
+                    }
+                    text_target = None;
+                    text.clear();
+                }
             }
             Ok(Event::End(e)) => {
                 let name = e.local_name();
@@ -176,17 +239,17 @@ fn parse_propfind(xml: &str, base_path: &str, dir: &str) -> Result<Vec<Entry>, F
                         if rel.len() > 1 {
                             rel = rel.trim_end_matches('/').to_string();
                         }
-                        // Das Verzeichnis selbst taucht in der Antwort mit auf — überspringen.
-                        if rel != dir && rel != "/" || (dir != "/" && rel == "/") {
-                            if rel != dir {
-                                entries.push(Entry {
-                                    name: rpath::file_name(&rel).to_string(),
-                                    path: rel,
-                                    kind: if c.is_dir { EntryKind::Dir } else { EntryKind::File },
-                                    size: c.size,
-                                    modified: c.modified,
-                                });
-                            }
+                        // Das Verzeichnis selbst taucht in der Antwort mit auf — überspringen;
+                        // die DAV-Wurzel ist nie Kind eines anderen Verzeichnisses.
+                        let self_dir = if dir.is_empty() { "/" } else { dir };
+                        if rel != self_dir && rel != "/" && !rel.is_empty() {
+                            entries.push(Entry {
+                                name: rpath::file_name(&rel).to_string(),
+                                path: rel,
+                                kind: if c.is_dir { EntryKind::Dir } else { EntryKind::File },
+                                size: c.size,
+                                modified: c.modified,
+                            });
                         }
                     }
                 }
@@ -394,5 +457,27 @@ mod tests {
         assert!(entries[0].modified.is_some());
         assert_eq!(entries[1].name, "unter");
         assert_eq!(entries[1].kind, EntryKind::Dir);
+    }
+
+    #[test]
+    fn parses_entities_absolute_hrefs_and_root() {
+        // Apache escaped „&" in hrefs als &amp; — der Name darf weder
+        // abgeschnitten werden noch Leerzeichen verlieren.
+        let xml = r#"<?xml version="1.0"?>
+<d:multistatus xmlns:d="DAV:">
+  <d:response><d:href>https://cloud.example.com/remote.php/dav/files/anna/</d:href>
+    <d:propstat><d:prop><d:resourcetype><d:collection/></d:resourcetype></d:prop></d:propstat></d:response>
+  <d:response><d:href>https://cloud.example.com/remote.php/dav/files/anna/A%20&amp;%20B.txt</d:href>
+    <d:propstat><d:prop><d:resourcetype/><d:getcontentlength> 7 </d:getcontentlength></d:prop></d:propstat></d:response>
+  <d:response><d:href>/remote.php/dav/files/anna/Tom &amp; Jerry &#228;.md</d:href>
+    <d:propstat><d:prop><d:resourcetype/></d:prop></d:propstat></d:response>
+  <d:response><d:href><![CDATA[/remote.php/dav/files/anna/cdata.txt]]></d:href>
+    <d:propstat><d:prop><d:resourcetype/></d:prop></d:propstat></d:response>
+</d:multistatus>"#;
+        let entries = parse_propfind(xml, "/remote.php/dav/files/anna", "").unwrap();
+        let names: Vec<_> = entries.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(names, vec!["A & B.txt", "Tom & Jerry ä.md", "cdata.txt"]);
+        assert_eq!(entries[0].path, "/A & B.txt");
+        assert_eq!(entries[0].size, 7);
     }
 }

@@ -149,6 +149,11 @@ impl Backend for SftpBackend {
 
     async fn remove(&self, path: &str, is_dir: bool) -> Result<(), FpError> {
         if is_dir {
+            // SFTP entfernt nur leere Verzeichnisse — Inhalt rekursiv abräumen
+            // (Symlinks werden als Link gelöscht, nie verfolgt).
+            for entry in self.list(path).await? {
+                Box::pin(self.remove(&entry.path, entry.kind == EntryKind::Dir)).await?;
+            }
             self.sftp.remove_dir(path).await.map_err(|e| map_sftp(path, e))
         } else {
             self.sftp.remove_file(path).await.map_err(|e| map_sftp(path, e))

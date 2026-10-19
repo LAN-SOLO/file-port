@@ -1,11 +1,16 @@
 use std::io::{Read, Write};
 use std::path::Path;
-use std::time::UNIX_EPOCH;
+use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
+use std::sync::Arc;
+use std::time::{Duration, UNIX_EPOCH};
 
 use async_trait::async_trait;
-use suppaftp::native_tls::TlsConnector;
+use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
+use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
+use rustls::{ClientConfig, DigitallySignedStruct, SignatureScheme};
+use rustls_platform_verifier::BuilderVerifierExt;
 use suppaftp::types::FileType;
-use suppaftp::{Mode, NativeTlsConnector, NativeTlsFtpStream};
+use suppaftp::{Mode, RustlsConnector, RustlsFtpStream};
 
 use crate::backend::{Backend, Entry, EntryKind};
 use crate::error::FpError;
@@ -35,9 +40,94 @@ pub struct FtpConfig {
 /// FTP wird nicht unterstützt. Jede Operation nimmt die Verbindung
 /// kurz aus dem Mutex und arbeitet in `spawn_blocking`, damit der
 /// Tokio-Reaktor frei bleibt.
+///
+/// TLS läuft über rustls mit einer gemeinsamen `ClientConfig` für Steuer-
+/// und Datenkanal: Die Datenverbindungen nehmen die TLS-Session der
+/// Steuerverbindung wieder auf, wie es vsftpd (`require_ssl_reuse`),
+/// ProFTPD und FileZilla Server standardmäßig verlangen. Zertifikate prüft
+/// der Zertifikatsspeicher des Betriebssystems.
 pub struct FtpBackend {
-    conn: tokio::sync::Mutex<Option<NativeTlsFtpStream>>,
+    conn: tokio::sync::Mutex<Option<RustlsFtpStream>>,
     label: String,
+}
+
+/// Bewusst unsicherer Verifier für „selbstsignierte Zertifikate
+/// akzeptieren": Zertifikat und Hostname werden nicht geprüft, die
+/// Handshake-Signaturen aber schon (der Server muss den Schlüssel besitzen).
+#[derive(Debug)]
+struct AcceptAnyCert(Arc<rustls::crypto::CryptoProvider>);
+
+impl ServerCertVerifier for AcceptAnyCert {
+    fn verify_server_cert(
+        &self,
+        _end_entity: &CertificateDer<'_>,
+        _intermediates: &[CertificateDer<'_>],
+        _server_name: &ServerName<'_>,
+        _ocsp_response: &[u8],
+        _now: UnixTime,
+    ) -> Result<ServerCertVerified, rustls::Error> {
+        Ok(ServerCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        rustls::crypto::verify_tls12_signature(
+            message,
+            cert,
+            dss,
+            &self.0.signature_verification_algorithms,
+        )
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        rustls::crypto::verify_tls13_signature(
+            message,
+            cert,
+            dss,
+            &self.0.signature_verification_algorithms,
+        )
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        self.0.signature_verification_algorithms.supported_schemes()
+    }
+}
+
+/// TLS-Konfiguration für FTPS: aws-lc-rs als Kryptografie, OS-Zertifikats-
+/// prüfung (oder bewusst keine), Session-Wiederaufnahme an (rustls-Default).
+/// Steuer- und Datenkanäle teilen sich diese eine Konfiguration (und damit
+/// den Session-Cache).
+fn tls_config(accept_invalid_certs: bool) -> Result<Arc<ClientConfig>, FpError> {
+    let provider = Arc::new(rustls::crypto::aws_lc_rs::default_provider());
+    // TLS 1.2 (nur ECDHE + AEAD-Suites, wie rustls sie ausschließlich anbietet):
+    // TLS-1.3-Tickets sind Einmal-Tickets und kommen nur an, wenn der Client
+    // nach dem Handshake liest — nach wenigen Upload-Datenkanälen wären sie
+    // aufgebraucht, und Server mit Session-Reuse-Pflicht lehnen ab (522).
+    // TLS-1.2-Sessions lassen sich beliebig oft wiederaufnehmen.
+    let builder = ClientConfig::builder_with_provider(provider.clone())
+        .with_protocol_versions(&[&rustls::version::TLS12])
+        .map_err(|e| FpError::Connect(format!("TLS: {e}")))?;
+    let config = if accept_invalid_certs {
+        builder
+            .dangerous()
+            .with_custom_certificate_verifier(Arc::new(AcceptAnyCert(provider)))
+            .with_no_client_auth()
+    } else {
+        builder
+            .with_platform_verifier()
+            .map_err(|e| FpError::Connect(format!("TLS: {e}")))?
+            .with_no_client_auth()
+    };
+    Ok(Arc::new(config))
 }
 
 fn map_ftp(path: &str, e: suppaftp::FtpError) -> FpError {
@@ -56,31 +146,68 @@ fn map_ftp(path: &str, e: suppaftp::FtpError) -> FpError {
     }
 }
 
+/// Zeitlimits: Verbindungsaufbau und „kein Byte mehr" auf Steuer-/Datenkanal —
+/// ein hängender Server blockiert so nie dauerhaft die Warteschlange.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
+const IO_TIMEOUT: Duration = Duration::from_secs(120);
+
+fn resolve(host: &str, port: u16) -> Result<SocketAddr, FpError> {
+    (host, port)
+        .to_socket_addrs()
+        .map_err(|e| FpError::Connect(format!("{host}: {e}")))?
+        .next()
+        .ok_or_else(|| FpError::Connect(format!("{host}: keine Adresse gefunden")))
+}
+
+fn data_stream(addr: SocketAddr) -> suppaftp::FtpResult<TcpStream> {
+    let stream = TcpStream::connect_timeout(&addr, CONNECT_TIMEOUT)
+        .map_err(suppaftp::FtpError::ConnectionError)?;
+    stream
+        .set_read_timeout(Some(IO_TIMEOUT))
+        .and_then(|_| stream.set_write_timeout(Some(IO_TIMEOUT)))
+        .map_err(suppaftp::FtpError::ConnectionError)?;
+    Ok(stream)
+}
+
 impl FtpBackend {
     pub async fn connect(cfg: FtpConfig) -> Result<Self, FpError> {
         let label = format!("ftps://{}@{}", cfg.user, cfg.host);
-        let stream = tokio::task::spawn_blocking(move || -> Result<NativeTlsFtpStream, FpError> {
-            let addr = format!("{}:{}", cfg.host, cfg.port);
-            let tls = TlsConnector::builder()
-                .danger_accept_invalid_certs(cfg.accept_invalid_certs)
-                .build()
-                .map_err(|e| FpError::Connect(e.to_string()))?;
-            let mut stream = match cfg.security {
-                FtpSecurity::ExplicitTls => NativeTlsFtpStream::connect(&addr)
+        let stream = tokio::task::spawn_blocking(move || -> Result<RustlsFtpStream, FpError> {
+            let addr = resolve(&cfg.host, cfg.port)?;
+            let tls = tls_config(cfg.accept_invalid_certs)?;
+            let stream = match cfg.security {
+                FtpSecurity::ExplicitTls => RustlsFtpStream::connect_timeout(addr, CONNECT_TIMEOUT)
                     .map_err(|e| FpError::Connect(e.to_string()))?
-                    .into_secure(NativeTlsConnector::from(tls), &cfg.host)
+                    .into_secure(RustlsConnector::from(tls), &cfg.host)
                     .map_err(|e| FpError::Connect(format!("TLS: {e}")))?,
-                FtpSecurity::ImplicitTls => NativeTlsFtpStream::connect_secure_implicit(
-                    &addr,
-                    NativeTlsConnector::from(tls),
-                    &cfg.host,
-                )
-                .map_err(|e| FpError::Connect(format!("TLS: {e}")))?,
+                FtpSecurity::ImplicitTls => {
+                    let mut s = RustlsFtpStream::connect_secure_implicit(
+                        &addr,
+                        RustlsConnector::from(tls),
+                        &cfg.host,
+                    )
+                    .map_err(|e| FpError::Connect(format!("TLS: {e}")))?;
+                    // suppaftp schaltet bei implizitem TLS den Datenkanal-Schutz
+                    // nicht ein — ohne PBSZ/PROT P erwartet der Server Klartext-
+                    // Datenkanäle, fileport spricht aber TLS (→ Hänger oder 522).
+                    for cmd in ["PBSZ 0", "PROT P"] {
+                        s.custom_command(cmd, &[suppaftp::Status::CommandOk])
+                            .map_err(|e| FpError::Connect(format!("{cmd}: {e}")))?;
+                    }
+                    s
+                }
             };
+            let _ = stream.get_ref().set_read_timeout(Some(IO_TIMEOUT));
+            let _ = stream.get_ref().set_write_timeout(Some(IO_TIMEOUT));
+            let mut stream = stream.passive_stream_builder(data_stream);
             stream
                 .login(&cfg.user, &cfg.password)
                 .map_err(|e| FpError::Auth(e.to_string()))?;
             stream.set_mode(Mode::Passive);
+            // PASV-Antworten mit privater/fremder IP ignorieren und den Datenkanal
+            // immer zum Host der Steuerverbindung aufbauen (NAT-Server, und kein
+            // Umlenken des Datenkanals auf Dritt-Hosts).
+            stream.set_passive_nat_workaround(true);
             stream
                 .transfer_type(FileType::Binary)
                 .map_err(|e| FpError::Connect(e.to_string()))?;
@@ -100,7 +227,7 @@ impl FtpBackend {
     async fn with_conn<T, F>(&self, f: F) -> Result<T, FpError>
     where
         T: Send + 'static,
-        F: FnOnce(&mut NativeTlsFtpStream) -> Result<T, FpError> + Send + 'static,
+        F: FnOnce(&mut RustlsFtpStream) -> Result<T, FpError> + Send + 'static,
     {
         let mut guard = self.conn.lock().await;
         let mut stream = guard
@@ -246,6 +373,12 @@ impl Backend for FtpBackend {
     }
 
     async fn remove(&self, path: &str, is_dir: bool) -> Result<(), FpError> {
+        if is_dir {
+            // RMD löscht nur leere Verzeichnisse — Inhalt rekursiv abräumen.
+            for entry in self.list(path).await? {
+                Box::pin(self.remove(&entry.path, entry.kind == EntryKind::Dir)).await?;
+            }
+        }
         let path = path.to_string();
         self.with_conn(move |c| {
             if is_dir {

@@ -154,7 +154,7 @@ impl Backend for ObjectBackend {
 
         let mut out = Vec::new();
         for p in result.common_prefixes {
-            let name = p.parts().last().map(|s| s.as_ref().to_string()).unwrap_or_default();
+            let name = p.parts().next_back().map(|s| s.as_ref().to_string()).unwrap_or_default();
             out.push(Entry {
                 path: format!("/{p}"),
                 name,
@@ -167,7 +167,7 @@ impl Backend for ObjectBackend {
             let name = meta
                 .location
                 .parts()
-                .last()
+                .next_back()
                 .map(|s| s.as_ref().to_string())
                 .unwrap_or_default();
             // Ordner-Marker und das Präfix selbst nicht als Dateien zeigen
@@ -259,9 +259,122 @@ impl Backend for ObjectBackend {
     }
 
     async fn rename(&self, from: &str, to: &str) -> Result<(), FpError> {
-        self.store
-            .rename(&key(from), &key(to))
-            .await
-            .map_err(|e| map_obj(from, e))
+        let from_key = key(from);
+        let to_key = key(to);
+        match self.store.head(&from_key).await {
+            Ok(_) => self
+                .store
+                .rename(&from_key, &to_key)
+                .await
+                .map_err(|e| map_obj(from, e)),
+            Err(object_store::Error::NotFound { .. }) => {
+                // Kein Objekt unter dem Namen → „Ordner": alle Objekte unter
+                // dem Präfix einzeln verschieben (Kopie + Löschen je Objekt —
+                // Objektspeicher kennen kein atomares Verzeichnis-Umbenennen).
+                let locations: Vec<ObjPath> = self
+                    .store
+                    .list(Some(&from_key))
+                    .map_ok(|m| m.location)
+                    .try_collect()
+                    .await
+                    .map_err(|e| map_obj(from, e))?;
+                if locations.is_empty() {
+                    return Err(FpError::NotFound(from.to_string()));
+                }
+                for loc in locations {
+                    let Some(rest) = loc.prefix_match(&from_key) else {
+                        continue;
+                    };
+                    let target: ObjPath = to_key.parts().chain(rest).collect();
+                    self.store
+                        .rename(&loc, &target)
+                        .await
+                        .map_err(|e| map_obj(from, e))?;
+                }
+                Ok(())
+            }
+            Err(e) => Err(map_obj(from, e)),
+        }
+    }
+}
+
+impl ObjectBackend {
+    /// Backend über einen beliebigen Store — für Tests (InMemory).
+    #[cfg(test)]
+    pub(crate) fn from_store(store: Arc<dyn ObjectStore>, label: &str) -> Self {
+        ObjectBackend {
+            store,
+            label: label.to_string(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use object_store::memory::InMemory;
+
+    fn backend() -> ObjectBackend {
+        ObjectBackend::from_store(Arc::new(InMemory::new()), "mem://")
+    }
+
+    #[tokio::test]
+    async fn folders_files_rename_and_remove() {
+        let be = backend();
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("src.bin");
+        let data: Vec<u8> = (0..150_000u32).map(|i| (i % 233) as u8).collect();
+        tokio::fs::write(&src, &data).await.unwrap();
+
+        // leerer Ordner über Marker sichtbar, Marker selbst unsichtbar
+        be.mkdir("/docs").await.unwrap();
+        let root = be.list("/").await.unwrap();
+        assert_eq!(root.len(), 1);
+        assert_eq!(root[0].name, "docs");
+        assert_eq!(root[0].kind, EntryKind::Dir);
+        assert!(be.list("/docs").await.unwrap().is_empty());
+
+        let up = be.upload(&src, "/docs/Bericht 2026.bin", &TransferCtl::noop()).await.unwrap();
+        assert_eq!(up.bytes, data.len() as u64);
+        be.mkdir("/docs/sub").await.unwrap();
+        be.upload(&src, "/docs/sub/inner.bin", &TransferCtl::noop()).await.unwrap();
+
+        let mut names: Vec<_> = be.list("/docs").await.unwrap().into_iter().map(|e| (e.name, e.kind)).collect();
+        names.sort_by(|a, b| a.0.cmp(&b.0));
+        assert_eq!(names, vec![("Bericht 2026.bin".to_string(), EntryKind::File), ("sub".to_string(), EntryKind::Dir)]);
+
+        let dst = dir.path().join("dst.bin");
+        let down = be.download("/docs/Bericht 2026.bin", &dst, &TransferCtl::noop()).await.unwrap();
+        assert_eq!(down.blake3, up.blake3);
+        assert_eq!(tokio::fs::read(&dst).await.unwrap(), data);
+
+        // Datei umbenennen
+        be.rename("/docs/Bericht 2026.bin", "/docs/neu.bin").await.unwrap();
+        // Ordner umbenennen: alle Objekte unter dem Präfix wandern mit
+        be.rename("/docs", "/archiv").await.unwrap();
+        assert!(be.list("/docs").await.unwrap().is_empty());
+        let mut moved: Vec<_> = be.list("/archiv").await.unwrap().into_iter().map(|e| e.name).collect();
+        moved.sort();
+        assert_eq!(moved, vec!["neu.bin", "sub"]);
+        assert_eq!(be.list("/archiv/sub").await.unwrap()[0].name, "inner.bin");
+
+        // Fehlendes Ziel → NotFound
+        assert!(matches!(be.rename("/gibtsnicht", "/x").await, Err(FpError::NotFound(_))));
+
+        // Ordner rekursiv löschen (inkl. Marker)
+        be.remove("/archiv", true).await.unwrap();
+        assert!(be.list("/").await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn cancelled_upload_leaves_no_object() {
+        let be = backend();
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("src.bin");
+        tokio::fs::write(&src, vec![1u8; 1024]).await.unwrap();
+        let ctl = TransferCtl::noop();
+        ctl.cancel.cancel();
+        assert!(matches!(be.upload(&src, "/a.bin", &ctl).await, Err(FpError::Cancelled)));
+        assert!(be.list("/").await.unwrap().is_empty());
     }
 }

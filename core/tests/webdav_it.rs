@@ -58,6 +58,17 @@ async fn webdav_roundtrip_against_real_server() {
 
     be.rename("/it test/file ä.bin", "/it test/renamed.bin").await.unwrap();
     be.remove("/it test/renamed.bin", false).await.unwrap();
+
+    // „&" im Namen (Server escaped als &amp;) und Wurzel ohne Leer-Eintrag
+    be.upload(&src, "/it test/A & B.bin", &TransferCtl::noop()).await.unwrap();
+    let listing = be.list("/it test").await.unwrap();
+    assert_eq!(listing.len(), 1);
+    assert_eq!(listing[0].name, "A & B.bin");
+    let root = be.list("/").await.unwrap();
+    assert!(root.iter().all(|e| !e.name.is_empty() && e.path != "/"));
+    assert!(root.iter().any(|e| e.name == "it test" && e.kind == EntryKind::Dir));
+
+    // Ordner samt Inhalt löschen
     be.remove("/it test", true).await.unwrap();
     assert!(be.list("/it test").await.is_err());
 }

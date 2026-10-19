@@ -9,7 +9,10 @@
 //! docker stop fileport-sftp
 //! ```
 
-use fileport_core::{Backend, SftpBackend, SshAuth, SshConfig, TransferCtl};
+use fileport_core::{
+    host_key_fingerprint, probe_host_key, Backend, FpError, SftpBackend, SshAuth, SshConfig,
+    TransferCtl,
+};
 
 fn config(expected_host_key: Option<String>) -> SshConfig {
     SshConfig {
@@ -34,9 +37,18 @@ async fn sftp_roundtrip_against_real_server() {
 
     // Wiederverbinden mit gespeichertem Key muss klappen …
     let be = SftpBackend::connect(config(Some(host_key.clone()))).await.unwrap();
-    // … und mit falschem Key scheitern.
+    // … und mit falschem Key scheitern — mit dem tatsächlich gesehenen Key im Fehler.
     let bogus = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIP///////////////////////////////////w bogus";
-    assert!(SftpBackend::connect(config(Some(bogus.into()))).await.is_err());
+    match SftpBackend::connect(config(Some(bogus.into()))).await {
+        Err(FpError::HostKeyMismatch { seen, .. }) => assert_eq!(seen.trim(), host_key.trim()),
+        Err(other) => panic!("falscher Fehler: {other}"),
+        Ok(_) => panic!("falscher Host-Key wurde akzeptiert"),
+    }
+
+    // Probe ohne Anmeldung liefert denselben Key; Fingerprint im ssh-keygen-Format.
+    let probed = probe_host_key("127.0.0.1", 2222).await.unwrap();
+    assert_eq!(probed.trim(), host_key.trim());
+    assert!(host_key_fingerprint(&probed).unwrap().starts_with("SHA256:"));
 
     let dir = tempfile::tempdir().unwrap();
     let src = dir.path().join("src.bin");
@@ -59,6 +71,10 @@ async fn sftp_roundtrip_against_real_server() {
 
     be.rename("/upload/it/file.bin", "/upload/it/renamed.bin").await.unwrap();
     be.remove("/upload/it/renamed.bin", false).await.unwrap();
+
+    // Nicht-leeren Ordner rekursiv löschen (SFTP-RMDIR allein kann das nicht)
+    be.mkdir("/upload/it/sub").await.unwrap();
+    be.upload(&src, "/upload/it/sub/inner.bin", &TransferCtl::noop()).await.unwrap();
     be.remove("/upload/it", true).await.unwrap();
     assert!(be.list("/upload/it").await.is_err());
 }

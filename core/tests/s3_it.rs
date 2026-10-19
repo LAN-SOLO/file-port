@@ -1,9 +1,12 @@
 //! Integrationstest gegen einen echten S3-kompatiblen Server (Docker: MinIO).
 //!
+//! MinIO-Images sind seit 2025 nicht mehr frei auf Docker Hub — der Test
+//! läuft gegen `rclone serve s3` (Bucket = Unterordner des Datenverzeichnisses):
+//!
 //! ```sh
-//! docker run --rm -d --name fileport-s3 -p 9000:9000 \
-//!   -e MINIO_ROOT_USER=fileport -e MINIO_ROOT_PASSWORD=fileport-secret \
-//!   -e MINIO_DEFAULT_BUCKETS=testbucket bitnami/minio
+//! mkdir -p /tmp/fileport-s3/testbucket
+//! docker run --rm -d --name fileport-s3 -p 9000:8080 -v /tmp/fileport-s3:/data \
+//!   rclone/rclone serve s3 --addr :8080 --auth-key fileport,fileport-secret /data
 //! FILEPORT_IT=1 cargo test -p fileport-core --test s3_it
 //! docker stop fileport-s3
 //! ```
@@ -58,7 +61,12 @@ async fn s3_roundtrip_against_real_server() {
     let listing = be.list("/it").await.unwrap();
     assert_eq!(listing[0].name, "renamed.bin");
 
-    be.remove("/it", true).await.unwrap();
+    // Ordner umbenennen: alle Objekte unter dem Präfix wandern mit
+    be.rename("/it", "/it2").await.unwrap();
+    assert!(be.list("/it").await.unwrap().is_empty());
+    assert_eq!(be.list("/it2").await.unwrap()[0].name, "renamed.bin");
+
+    be.remove("/it2", true).await.unwrap();
     let root = be.list("/").await.unwrap();
-    assert!(!root.iter().any(|e| e.name == "it"));
+    assert!(!root.iter().any(|e| e.name == "it" || e.name == "it2"));
 }

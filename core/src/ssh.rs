@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::time::UNIX_EPOCH;
+use std::time::{Duration, UNIX_EPOCH};
 
 use russh::client;
 use russh::keys::{HashAlg, PrivateKeyWithHashAlg};
@@ -64,22 +64,72 @@ pub(crate) struct SshSession {
     pub host_key: String,
 }
 
+/// Zeitlimit für TCP-Verbindungsaufbau + SSH-Handshake.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
+
+fn client_config() -> Arc<client::Config> {
+    Arc::new(client::Config {
+        // Keepalives halten lange offene Sitzungen hinter NAT/Firewalls am
+        // Leben und erkennen tote Verbindungen (3 × 30 s ohne Antwort).
+        keepalive_interval: Some(Duration::from_secs(30)),
+        keepalive_max: 3,
+        ..Default::default()
+    })
+}
+
+/// SHA256-Fingerprint eines Host-Keys im OpenSSH-Format
+/// (`ssh-ed25519 AAAA…`) — so, wie `ssh-keygen -lf` ihn anzeigt.
+pub fn host_key_fingerprint(openssh: &str) -> Option<String> {
+    russh::keys::PublicKey::from_openssh(openssh.trim())
+        .ok()
+        .map(|k| k.fingerprint(HashAlg::Sha256).to_string())
+}
+
+/// Holt nur den Host-Key eines SSH-Servers, ohne sich anzumelden — damit
+/// die Nutzerin einen unbekannten Server bestätigen kann, BEVOR ein
+/// Passwort oder Schlüssel an ihn geht (Trust on first use mit Rückfrage).
+pub async fn probe_host_key(host: &str, port: u16) -> Result<String, FpError> {
+    let seen = Arc::new(Mutex::new(None));
+    let handler = HostKeyCheck {
+        // Ein Key, der garantiert nicht passt: der Handshake bricht nach
+        // dem Empfang des Server-Keys ab, es wird nichts authentifiziert.
+        expected: Some(String::new()),
+        seen: seen.clone(),
+    };
+    let result = tokio::time::timeout(
+        CONNECT_TIMEOUT,
+        client::connect(client_config(), (host, port), handler),
+    )
+    .await;
+    if let Some(key) = seen.lock().unwrap().clone() {
+        return Ok(key);
+    }
+    match result {
+        Err(_) => Err(FpError::Connect(format!("Zeitüberschreitung beim Verbinden mit {host}"))),
+        Ok(Err(e)) => Err(FpError::Connect(e.to_string())),
+        Ok(Ok(_)) => Err(FpError::Connect("Server hat keinen Host-Key gezeigt".into())),
+    }
+}
+
 pub(crate) async fn connect_ssh(cfg: &SshConfig) -> Result<SshSession, FpError> {
     let seen = Arc::new(Mutex::new(None));
     let handler = HostKeyCheck {
         expected: cfg.expected_host_key.clone(),
         seen: seen.clone(),
     };
-    let config = Arc::new(client::Config::default());
-    let mut handle = client::connect(config, (cfg.host.as_str(), cfg.port), handler)
-        .await
-        .map_err(|e| match e {
-            russh::Error::UnknownKey => FpError::Connect(format!(
-                "Host-Key von {} stimmt nicht mit dem gespeicherten überein",
-                cfg.host
-            )),
-            other => FpError::Connect(other.to_string()),
-        })?;
+    let mut handle = tokio::time::timeout(
+        CONNECT_TIMEOUT,
+        client::connect(client_config(), (cfg.host.as_str(), cfg.port), handler),
+    )
+    .await
+    .map_err(|_| FpError::Connect(format!("Zeitüberschreitung beim Verbinden mit {}", cfg.host)))?
+    .map_err(|e| match e {
+        russh::Error::UnknownKey => FpError::HostKeyMismatch {
+            host: cfg.host.clone(),
+            seen: seen.lock().unwrap().clone().unwrap_or_default(),
+        },
+        other => FpError::Connect(other.to_string()),
+    })?;
 
     let authed = match &cfg.auth {
         SshAuth::Password(pw) => handle
@@ -180,7 +230,10 @@ impl SshSession {
     /// suppaftp-Parser gleich mit (unparsbare Zeilen wie `total …`
     /// werden übersprungen).
     pub async fn list_dir(&self, path: &str) -> Result<Vec<Entry>, FpError> {
-        let cmd = format!("LC_ALL=C ls -la {}", shell_quote(path));
+        // Abschließender Slash: so listet ls auch den Inhalt von
+        // Verzeichnis-Symlinks statt nur den Link selbst.
+        let target = format!("{}/", path.trim_end_matches('/'));
+        let cmd = format!("LC_ALL=C ls -la -- {}", shell_quote(&target));
         let out = self.run_ok(&cmd, path).await?;
         let mut entries = Vec::new();
         for line in String::from_utf8_lossy(&out).lines() {
@@ -221,22 +274,22 @@ impl SshSession {
     }
 
     pub async fn mkdir(&self, path: &str) -> Result<(), FpError> {
-        self.run_ok(&format!("mkdir {}", shell_quote(path)), path)
+        self.run_ok(&format!("mkdir -- {}", shell_quote(path)), path)
             .await
             .map(|_| ())
     }
 
     pub async fn remove(&self, path: &str, is_dir: bool) -> Result<(), FpError> {
         let cmd = if is_dir {
-            format!("rm -r {}", shell_quote(path))
+            format!("rm -r -- {}", shell_quote(path))
         } else {
-            format!("rm {}", shell_quote(path))
+            format!("rm -- {}", shell_quote(path))
         };
         self.run_ok(&cmd, path).await.map(|_| ())
     }
 
     pub async fn rename(&self, from: &str, to: &str) -> Result<(), FpError> {
-        let cmd = format!("mv {} {}", shell_quote(from), shell_quote(to));
+        let cmd = format!("mv -- {} {}", shell_quote(from), shell_quote(to));
         self.run_ok(&cmd, from).await.map(|_| ())
     }
 

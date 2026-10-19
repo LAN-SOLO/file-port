@@ -31,6 +31,6 @@ pub use rsyncssh::RsyncBackend;
 pub use scp::ScpBackend;
 pub use sftp::SftpBackend;
 pub use smb::{SmbBackend, SmbConfig};
-pub use ssh::{SshAuth, SshConfig};
+pub use ssh::{host_key_fingerprint, probe_host_key, SshAuth, SshConfig};
 pub use transfer::{copy_with_progress, CancelToken, TransferCtl, TransferResult};
 pub use webdav::{WebdavBackend, WebdavConfig};

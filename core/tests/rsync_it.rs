@@ -27,8 +27,8 @@ async fn rsync_roundtrip_against_real_server() {
         return;
     };
 
-    // Eigenes HOME, damit das gespawnte ssh (accept-new) seine known_hosts
-    // nicht in die des Entwicklers schreibt.
+    // Eigenes, leeres HOME: Das gespawnte ssh darf die known_hosts der
+    // Nutzerin weder brauchen noch beschreiben (Host-Key kommt gepinnt mit).
     let home = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(home.path().join(".ssh")).unwrap();
     std::env::set_var("HOME", home.path());
@@ -79,7 +79,19 @@ async fn rsync_roundtrip_against_real_server() {
         .await
         .unwrap();
     be.remove(&format!("{base}/renamed.bin"), false).await.unwrap();
+
+    // Shell-aktive Zeichen im Namen müssen heil ankommen (Quoting je nach
+    // lokalem rsync: openrsync/alt = selbst quoten, GNU ≥ 3.2.4 = roh).
+    let tricky = format!("{base}/it's $(x) & ;.bin");
+    be.upload(&src, &tricky, &TransferCtl::noop()).await.unwrap();
+    let names: Vec<_> = be.list(&base).await.unwrap().into_iter().map(|e| e.name).collect();
+    assert_eq!(names, vec!["it's $(x) & ;.bin"]);
+    let dst2 = dir.path().join("dst2.bin");
+    let down2 = be.download(&tricky, &dst2, &TransferCtl::noop()).await.unwrap();
+    assert_eq!(down2.blake3, up.blake3);
+
     be.remove(&base, true).await.unwrap();
+    assert!(!home.path().join(".ssh/known_hosts").exists());
 
     // Passwort-Auth muss rsync klar ablehnen (Transfers wären unmöglich).
     let pw = RsyncBackend::connect(SshConfig {

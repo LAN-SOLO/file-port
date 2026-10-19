@@ -3,8 +3,8 @@ import { t } from '../i18n';
 export type QStatus = 'queued' | 'starting' | 'running' | 'done' | 'error' | 'cancelled';
 
 export interface QItem {
+  /** Zugleich die Transfer-ID im Backend (Events tragen sie als `id`). */
   key: number;
-  tid?: number;
   direction: 'download' | 'upload';
   name: string;
   status: QStatus;

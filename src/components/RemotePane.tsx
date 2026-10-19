@@ -1,27 +1,42 @@
 import { useEffect, useState } from 'react';
-import { api, emptyProfile, Profile, Protocol } from '../api';
+import { api, emptyProfile, HostKeyPrompt, Profile, Protocol } from '../api';
 import { t } from '../i18n';
 import FilePane, { FilePaneProps } from './FilePane';
 
 /** Nur verschlüsselte Protokolle — Klartext-FTP gibt es bewusst nicht. */
 const PROTOCOLS: { value: Protocol; label: string }[] = [
-  { value: 'sftp', label: 'SFTP (SSH)' },
-  { value: 'scp', label: 'SCP (SSH)' },
-  { value: 'rsync', label: 'rsync über SSH' },
-  { value: 'ftps', label: 'FTPS (explizit, AUTH TLS)' },
-  { value: 'ftps_implicit', label: 'FTPS (implizit, Port 990)' },
-  { value: 'webdav', label: 'WebDAV (HTTPS)' },
-  { value: 'smb', label: 'SMB 2/3 (Windows/NAS)' },
-  { value: 's3', label: 'S3 (AWS & kompatible)' },
-  { value: 'azure', label: 'Azure Blob Storage' },
-  { value: 'gcs', label: 'Google Cloud Storage' },
+  { value: 'sftp', label: t.pSftp },
+  { value: 'scp', label: t.pScp },
+  { value: 'rsync', label: t.pRsync },
+  { value: 'ftps', label: t.pFtps },
+  { value: 'ftps_implicit', label: t.pFtpsImplicit },
+  { value: 'webdav', label: t.pWebdav },
+  { value: 'smb', label: t.pSmb },
+  { value: 's3', label: t.pS3 },
+  { value: 'azure', label: t.pAzure },
+  { value: 'gcs', label: t.pGcs },
 ];
+
+/** SHA256-Fingerprint eines OpenSSH-Public-Keys (wie `ssh-keygen -lf`). */
+async function fingerprintOf(openssh: string): Promise<string> {
+  try {
+    const b64 = openssh.trim().split(/\s+/)[1] ?? '';
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+    let bin = '';
+    digest.forEach((b) => (bin += String.fromCharCode(b)));
+    return 'SHA256:' + btoa(bin).replace(/=+$/, '');
+  } catch {
+    return openssh.trim().split(/\s+/)[0] ?? '';
+  }
+}
 
 /** Alte „ftp"-Profile im Formular als FTPS führen — verbunden wird ohnehin nur per TLS. */
 const normalizeProtocol = (p: Protocol): Protocol => (p === 'ftp' ? 'ftps' : p);
 
 interface RemotePaneProps {
   onError: (msg: string) => void;
+  onInfo: (msg: string) => void;
   onConnected: (conn: number | null) => void;
   paneProps: Omit<FilePaneProps, 'conn' | 'title'>;
 }
@@ -30,12 +45,16 @@ interface RemotePaneProps {
  * Rechte Seite des Zwei-Fenster-Layouts: Verbindungs-Manager solange
  * getrennt, danach die Datei-Ansicht der Gegenstelle.
  */
-export default function RemotePane({ onError, onConnected, paneProps }: RemotePaneProps) {
+export default function RemotePane({ onError, onInfo, onConnected, paneProps }: RemotePaneProps) {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [form, setForm] = useState<Profile | null>(null);
   const [secret, setSecret] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
   const [session, setSession] = useState<{ conn: number; label: string } | null>(null);
+  const [clearSecret, setClearSecret] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<Profile | null>(null);
+  const [hostKeyAsk, setHostKeyAsk] = useState<{ id: string; host: string; prompt: HostKeyPrompt } | null>(null);
+  const [storedFp, setStoredFp] = useState('');
 
   const loadProfiles = () => {
     api.profiles().then(setProfiles).catch((err) => onError(String(err)));
@@ -43,12 +62,19 @@ export default function RemotePane({ onError, onConnected, paneProps }: RemotePa
 
   useEffect(loadProfiles, []);
 
-  const doConnect = async (id: string) => {
+  const doConnect = async (id: string, trustHostKey: string | null = null, hostHint = '') => {
     setBusy(id);
     try {
-      const result = await api.connect(id);
-      setSession(result);
-      onConnected(result.conn);
+      const result = await api.connect(id, trustHostKey);
+      if (result.host_key) {
+        // Unbekannter oder geänderter SSH-Host-Key: erst bestätigen lassen
+        const host = profiles.find((p) => p.id === id)?.host || hostHint;
+        setHostKeyAsk({ id, host, prompt: result.host_key });
+      } else if (result.conn !== null) {
+        setSession({ conn: result.conn, label: result.label });
+        onConnected(result.conn);
+      }
+      loadProfiles();
     } catch (err) {
       onError(String(err));
     } finally {
@@ -69,11 +95,12 @@ export default function RemotePane({ onError, onConnected, paneProps }: RemotePa
     if (!form.name.trim()) return onError(t.fName + '?');
     setBusy('form');
     try {
-      const saved = await api.saveProfile(form, secret || null);
+      const saved = await api.saveProfile(form, secret || null, clearSecret && !secret);
       setForm(null);
       setSecret('');
+      setClearSecret(false);
       loadProfiles();
-      if (connectAfter) await doConnect(saved.id);
+      if (connectAfter) await doConnect(saved.id, null, saved.host);
     } catch (err) {
       onError(String(err));
     } finally {
@@ -84,11 +111,35 @@ export default function RemotePane({ onError, onConnected, paneProps }: RemotePa
   const removeProfile = async (id: string) => {
     try {
       await api.deleteProfile(id);
+      if (form?.id === id) setForm(null);
       loadProfiles();
     } catch (err) {
       onError(String(err));
     }
   };
+
+  const forgetHostKey = async () => {
+    if (!form?.id) return;
+    try {
+      await api.resetHostKey(form.id);
+      setForm({ ...form, host_key: '' });
+      setStoredFp('');
+      loadProfiles();
+      onInfo(t.hostKeyForgotten);
+    } catch (err) {
+      onError(String(err));
+    }
+  };
+
+  // Fingerprint des gemerkten Host-Keys im Bearbeiten-Formular
+  useEffect(() => {
+    let alive = true;
+    if (form?.host_key) fingerprintOf(form.host_key).then((fp) => alive && setStoredFp(fp));
+    else setStoredFp('');
+    return () => {
+      alive = false;
+    };
+  }, [form?.host_key]);
 
   if (session) {
     return (
@@ -161,18 +212,43 @@ export default function RemotePane({ onError, onConnected, paneProps }: RemotePa
               onClick={() => {
                 setForm({ ...p, protocol: normalizeProtocol(p.protocol) });
                 setSecret('');
+                setClearSecret(false);
               }}
             >
               ✎
             </button>
-            <button className="small danger" title={t.del} onClick={() => removeProfile(p.id)}>
+            <button className="small danger" title={t.del} onClick={() => setConfirmDelete(p)}>
               ✕
             </button>
           </div>
         ))}
 
+        {confirmDelete && (
+          <div className="pane-prompt">
+            <span className="prompt-text">{t.deleteProfileConfirm(confirmDelete.name)}</span>
+            <button
+              className="primary"
+              onClick={() => {
+                const id = confirmDelete.id;
+                setConfirmDelete(null);
+                removeProfile(id);
+              }}
+            >
+              {t.del}
+            </button>
+            <button onClick={() => setConfirmDelete(null)}>{t.cancel}</button>
+          </div>
+        )}
+
         {!f ? (
-          <button className="mt" onClick={() => setForm(emptyProfile())}>
+          <button
+            className="mt"
+            onClick={() => {
+              setForm(emptyProfile());
+              setSecret('');
+              setClearSecret(false);
+            }}
+          >
             {t.newConnection}
           </button>
         ) : (
@@ -297,6 +373,22 @@ export default function RemotePane({ onError, onConnected, paneProps }: RemotePa
             )}
             {isRsync && <div className="faint">{t.rsyncKeyNote}</div>}
 
+            {isSsh && f.id && (
+              <div className="hostkey-row">
+                <span className="fieldlabel">{t.hostKeyStored}</span>
+                {f.host_key ? (
+                  <>
+                    <code className="fp">{storedFp}</code>
+                    <button className="small" onClick={forgetHostKey}>
+                      {t.hostKeyForget}
+                    </button>
+                  </>
+                ) : (
+                  <span className="faint">{t.hostKeyNone}</span>
+                )}
+              </div>
+            )}
+
             {!isGcs && (
               <label>
                 {secretLabel}
@@ -306,6 +398,13 @@ export default function RemotePane({ onError, onConnected, paneProps }: RemotePa
                   placeholder={f.id ? t.secretKeptNote : ''}
                   onChange={(e) => setSecret(e.target.value)}
                 />
+              </label>
+            )}
+
+            {!isGcs && f.id && !secret && (
+              <label className="check">
+                <input type="checkbox" checked={clearSecret} onChange={(e) => setClearSecret(e.target.checked)} />
+                {t.clearSecret}
               </label>
             )}
 
@@ -340,6 +439,52 @@ export default function RemotePane({ onError, onConnected, paneProps }: RemotePa
           </div>
         )}
       </div>
+
+      {hostKeyAsk && (
+        <div className="overlay" onClick={() => setHostKeyAsk(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="mhead">
+              <h3 className={hostKeyAsk.prompt.changed ? 'warn-text' : ''}>
+                {hostKeyAsk.prompt.changed ? t.hostKeyChangedTitle : t.hostKeyNewTitle}
+              </h3>
+              <button className="ghost" onClick={() => setHostKeyAsk(null)}>
+                ×
+              </button>
+            </div>
+            <div className="mbody">
+              <p>
+                {hostKeyAsk.prompt.changed
+                  ? t.hostKeyChangedBody(hostKeyAsk.host)
+                  : t.hostKeyNewBody(hostKeyAsk.host)}
+              </p>
+              <div className="fieldlabel">{t.hostKeyFingerprint}</div>
+              <code className="fp block">{hostKeyAsk.prompt.fingerprint}</code>
+              {hostKeyAsk.prompt.old_fingerprint && (
+                <>
+                  <div className="fieldlabel">{t.hostKeyOld}</div>
+                  <code className="fp block">{hostKeyAsk.prompt.old_fingerprint}</code>
+                </>
+              )}
+            </div>
+            <div className="mfoot">
+              <button autoFocus onClick={() => setHostKeyAsk(null)}>
+                {t.cancel}
+              </button>
+              <button
+                className={hostKeyAsk.prompt.changed ? 'danger' : 'primary'}
+                disabled={busy !== null}
+                onClick={() => {
+                  const ask = hostKeyAsk;
+                  setHostKeyAsk(null);
+                  doConnect(ask.id, ask.prompt.key, ask.host);
+                }}
+              >
+                {hostKeyAsk.prompt.changed ? t.hostKeyTrustChanged : t.hostKeyTrust}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

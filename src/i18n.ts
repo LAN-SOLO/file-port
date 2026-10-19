@@ -84,6 +84,41 @@ const de = {
 
   themeToggleLight: 'Zum Hell-Modus wechseln',
   themeToggleDark: 'Zum Dunkel-Modus wechseln',
+
+  overwriteTitle: 'Datei ersetzen?',
+  overwriteBody: (name: string) =>
+    `„${name}" existiert im Zielordner bereits. Soll die Datei ersetzt werden?`,
+  overwriteBtn: 'Ersetzen',
+  invalidName: 'Ungültiger Name — ohne „/“ und „\\“, nicht „.“ oder „..“.',
+  deleteProfileConfirm: (name: string) =>
+    `Verbindung „${name}" samt gespeichertem Geheimnis löschen?`,
+
+  hostKeyNewTitle: 'Unbekannter SSH-Server',
+  hostKeyNewBody: (host: string) =>
+    `fileport verbindet sich zum ersten Mal mit ${host}. Vergleichen Sie den Fingerprint mit dem des Servers (z. B. ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub), bevor Sie vertrauen — erst danach gehen Zugangsdaten an den Server.`,
+  hostKeyChangedTitle: 'Host-Key hat sich geändert',
+  hostKeyChangedBody: (host: string) =>
+    `${host} zeigt einen anderen Schlüssel als beim letzten Mal. Das kann eine Neuinstallation des Servers sein — oder ein Angriff (Man-in-the-Middle). Vertrauen Sie dem neuen Schlüssel nur, wenn Sie die Änderung bestätigen können.`,
+  hostKeyFingerprint: 'Fingerprint (SHA256)',
+  hostKeyOld: 'Bisher gespeichert',
+  hostKeyTrust: 'Vertrauen & verbinden',
+  hostKeyTrustChanged: 'Neuem Schlüssel vertrauen',
+  hostKeyStored: 'Gemerkter Host-Key',
+  hostKeyNone: '// noch keiner — wird beim ersten Verbinden bestätigt',
+  hostKeyForget: 'Host-Key vergessen',
+  hostKeyForgotten: 'Host-Key vergessen — die nächste Verbindung fragt neu nach.',
+  clearSecret: 'Gespeichertes Geheimnis löschen',
+
+  pSftp: 'SFTP (SSH)',
+  pScp: 'SCP (SSH)',
+  pRsync: 'rsync über SSH',
+  pFtps: 'FTPS (explizit, AUTH TLS)',
+  pFtpsImplicit: 'FTPS (implizit, Port 990)',
+  pWebdav: 'WebDAV (HTTPS)',
+  pSmb: 'SMB 2/3 (Windows/NAS)',
+  pS3: 'S3 (AWS & kompatible)',
+  pAzure: 'Azure Blob Storage',
+  pGcs: 'Google Cloud Storage',
 };
 
 const en: typeof de = {
@@ -171,6 +206,41 @@ const en: typeof de = {
 
   themeToggleLight: 'Switch to light mode',
   themeToggleDark: 'Switch to dark mode',
+
+  overwriteTitle: 'Replace file?',
+  overwriteBody: (name: string) =>
+    `“${name}” already exists in the target folder. Replace it?`,
+  overwriteBtn: 'Replace',
+  invalidName: 'Invalid name — no “/” or “\\”, not “.” or “..”.',
+  deleteProfileConfirm: (name: string) =>
+    `Delete connection “${name}” including its stored secret?`,
+
+  hostKeyNewTitle: 'Unknown SSH server',
+  hostKeyNewBody: (host: string) =>
+    `fileport is connecting to ${host} for the first time. Compare the fingerprint with the server's (e.g. ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub) before trusting it — credentials are only sent afterwards.`,
+  hostKeyChangedTitle: 'Host key has changed',
+  hostKeyChangedBody: (host: string) =>
+    `${host} presents a different key than last time. This may be a server reinstall — or an attack (man-in-the-middle). Only trust the new key if you can confirm the change.`,
+  hostKeyFingerprint: 'Fingerprint (SHA256)',
+  hostKeyOld: 'Previously stored',
+  hostKeyTrust: 'Trust & connect',
+  hostKeyTrustChanged: 'Trust new key',
+  hostKeyStored: 'Remembered host key',
+  hostKeyNone: '// none yet — confirmed on the first connection',
+  hostKeyForget: 'Forget host key',
+  hostKeyForgotten: 'Host key forgotten — the next connection will ask again.',
+  clearSecret: 'Delete stored secret',
+
+  pSftp: 'SFTP (SSH)',
+  pScp: 'SCP (SSH)',
+  pRsync: 'rsync over SSH',
+  pFtps: 'FTPS (explicit, AUTH TLS)',
+  pFtpsImplicit: 'FTPS (implicit, port 990)',
+  pWebdav: 'WebDAV (HTTPS)',
+  pSmb: 'SMB 2/3 (Windows/NAS)',
+  pS3: 'S3 (AWS & compatible)',
+  pAzure: 'Azure Blob Storage',
+  pGcs: 'Google Cloud Storage',
 };
 
 export const t = navigator.language.toLowerCase().startsWith('de') ? de : en;

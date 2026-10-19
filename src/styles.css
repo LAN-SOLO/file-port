@@ -723,6 +723,39 @@ button.ghost {
   justify-content: flex-end;
 }
 
+/* SSH-Host-Key: Fingerprint-Anzeige im Formular und in der Rückfrage */
+.hostkey-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.hostkey-row .fieldlabel {
+  margin: 0;
+}
+
+code.fp {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-body);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 6px;
+  word-break: break-all;
+}
+
+code.fp.block {
+  display: block;
+  margin: 4px 0 12px;
+  padding: 8px 10px;
+}
+
+.warn-text {
+  color: var(--error);
+}
+
 .changelog-box {
   background: var(--bg);
   border: 1px solid var(--border);

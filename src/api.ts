@@ -76,9 +76,22 @@ export function emptyProfile(protocol: Protocol = 'sftp'): Profile {
   };
 }
 
+/** Rückfrage zu einem SSH-Host-Key, bevor Zugangsdaten an den Server gehen. */
+export interface HostKeyPrompt {
+  /** SHA256-Fingerprint (wie `ssh-keygen -lf`). */
+  fingerprint: string;
+  /** Der Key selbst — bei Bestätigung als `trustHostKey` zurückgeben. */
+  key: string;
+  /** true: Der Server zeigt einen anderen Key als den gespeicherten. */
+  changed: boolean;
+  old_fingerprint: string | null;
+}
+
+/** Entweder offene Verbindung (`conn`) oder Host-Key-Rückfrage (`host_key`). */
 export interface ConnectResult {
-  conn: number;
+  conn: number | null;
   label: string;
+  host_key: HostKeyPrompt | null;
 }
 
 export const api = {
@@ -93,14 +106,22 @@ export const api = {
   rename: (conn: number, from: string, to: string) => invoke<void>('fs_rename', { conn, from, to }),
 
   profiles: () => invoke<Profile[]>('profiles_list'),
-  saveProfile: (profile: Profile, secret: string | null) =>
-    invoke<Profile>('profile_save', { profile, secret }),
+  saveProfile: (profile: Profile, secret: string | null, clearSecret = false) =>
+    invoke<Profile>('profile_save', { profile, secret, clearSecret }),
   deleteProfile: (id: string) => invoke<void>('profile_delete', { id }),
-  connect: (id: string) => invoke<ConnectResult>('connect', { id }),
+  resetHostKey: (id: string) => invoke<void>('profile_reset_host_key', { id }),
+  connect: (id: string, trustHostKey: string | null = null) =>
+    invoke<ConnectResult>('connect', { id, trustHostKey }),
   disconnect: (conn: number) => invoke<void>('disconnect', { conn }),
 
-  transferStart: (direction: 'download' | 'upload', conn: number, remote: string, local: string) =>
-    invoke<number>('transfer_start', { direction, conn, remote, local }),
+  /** `id` vergibt die UI (Warteschlangen-Schlüssel) — Events tragen dieselbe ID. */
+  transferStart: (
+    id: number,
+    direction: 'download' | 'upload',
+    conn: number,
+    remote: string,
+    local: string
+  ) => invoke<number>('transfer_start', { id, direction, conn, remote, local }),
   transferCancel: (id: number) => invoke<void>('transfer_cancel', { id }),
 };
 

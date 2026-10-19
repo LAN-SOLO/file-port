@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, Entry } from '../api';
 import { t } from '../i18n';
-import { joinPath, parentPath } from '../paths';
+import { isValidName, joinPath, parentPath } from '../paths';
 
 function formatSize(n: number): string {
   if (n < 1024) return `${n} B`;
@@ -45,6 +45,8 @@ export interface FilePaneProps {
   headExtra?: React.ReactNode;
   /** Doppelklick auf eine Datei (Ordner navigieren immer). */
   onFileActivate?: (entry: Entry) => void;
+  /** Aktuelle Einträge nach außen melden (z. B. für die Überschreiben-Rückfrage). */
+  onEntries?: (entries: Entry[], dir: string) => void;
 }
 
 export default function FilePane({
@@ -55,6 +57,7 @@ export default function FilePane({
   reloadKey,
   headExtra,
   onFileActivate,
+  onEntries,
 }: FilePaneProps) {
   const [dir, setDir] = useState<string>('');
   const [pathInput, setPathInput] = useState('');
@@ -78,13 +81,14 @@ export default function FilePane({
         setPathInput(path);
         setSelected(null);
         onSelect?.(null, path);
+        onEntries?.(list, path);
       } catch (err) {
         onError(String(err));
       } finally {
         setLoading(false);
       }
     },
-    [conn, onError, onSelect]
+    [conn, onError, onSelect, onEntries]
   );
 
   useEffect(() => {
@@ -109,9 +113,17 @@ export default function FilePane({
     onSelect?.(e, dir);
   };
 
-  const open = (e: Entry) => {
-    if (e.kind === 'dir') load(e.path);
-    else onFileActivate?.(e);
+  const open = async (e: Entry) => {
+    if (e.kind === 'dir') return load(e.path);
+    if (e.kind === 'symlink') {
+      // Symlink auf einen Ordner → hineinnavigieren, sonst wie eine Datei behandeln
+      const isDir = await api.list(conn, e.path).then(
+        () => true,
+        () => false
+      );
+      if (isDir) return load(e.path);
+    }
+    onFileActivate?.(e);
   };
 
   const submitPrompt = async () => {
@@ -120,10 +132,12 @@ export default function FilePane({
       if (prompt.kind === 'newFolder') {
         const name = promptValue.trim();
         if (!name) return;
+        if (!isValidName(name)) return onError(t.invalidName);
         await api.mkdir(conn, joinPath(dir, name));
       } else if (prompt.kind === 'rename') {
         const name = promptValue.trim();
         if (!name || name === prompt.entry.name) return setPrompt(null);
+        if (!isValidName(name)) return onError(t.invalidName);
         await api.rename(conn, prompt.entry.path, joinPath(dir, name));
       } else if (prompt.kind === 'delete') {
         await api.remove(conn, prompt.entry.path, prompt.entry.kind === 'dir');

@@ -48,9 +48,9 @@ const de: Content = {
     {
       title: 'Willkommen bei fileport.',
       body: [
-        'fileport ist ein Transfer-Client mit zwei Fenstern: links dein Rechner, rechts der Server oder Cloud-Speicher.',
+        'fileport ist ein Transfer-Client mit zwei Fenstern: links Ihr Rechner, rechts der Server oder Cloud-Speicher.',
         'Unterstützt werden SFTP, SCP, rsync über SSH, FTPS (explizit & implizit), WebDAV, SMB 2/3, S3, Azure Blob Storage und Google Cloud Storage — jede Verbindung sieht gleich aus und ist immer verschlüsselt.',
-        'Dieses Tutorial dauert eine Minute. Du findest es jederzeit wieder über den ?-Knopf unten rechts.',
+        'Dieses Tutorial dauert eine Minute. Sie finden es jederzeit wieder über den ?-Knopf unten rechts.',
       ],
     },
     {
@@ -61,7 +61,8 @@ const de: Content = {
         '• WebDAV: die Basis-URL des Servers (https://…) — SMB: Host, Freigabe, Benutzer, Passwort',
         '• S3: Endpoint, Region, Bucket, Access- und Secret-Key',
         '• Azure: Storage-Konto, Container, Access Key — GCS: Bucket und Service-Account-Datei',
-        '„Speichern & Verbinden“ legt das Profil an — beim nächsten Mal genügt ein Klick in der Profilliste.',
+        '„Speichern & verbinden“ legt das Profil an — beim nächsten Mal genügt ein Klick in der Profilliste.',
+        'Bei SSH-Servern zeigt fileport beim ersten Verbinden den Fingerprint des Servers an. Erst nach Ihrer Bestätigung gehen Passwort oder Schlüssel an den Server.',
       ],
     },
     {
@@ -69,29 +70,30 @@ const de: Content = {
       body: [
         'Datei links oder rechts auswählen, dann die Pfeile in der Mitte:',
         '• → lädt die lokale Datei zum Server hoch',
-        '• ← holt die Server-Datei auf deinen Rechner',
+        '• ← holt die Server-Datei auf Ihren Rechner',
         'Noch schneller: Doppelklick auf eine Datei überträgt sie direkt in die jeweils andere Seite.',
+        'Gibt es die Datei im Zielordner schon, fragt fileport vor dem Ersetzen nach.',
       ],
     },
     {
       title: 'Die Warteschlange',
       body: [
         'Alle Übertragungen sammeln sich unten in der Warteschlange und laufen nacheinander ab — mit Fortschritt pro Datei.',
-        'Laufende Übertragungen lassen sich abbrechen; „Fertige aufräumen“ leert die Liste.',
+        'Laufende Übertragungen lassen sich abbrechen; „Erledigte entfernen“ leert die Liste.',
       ],
     },
     {
       title: 'Dateien verwalten',
       body: [
         'Beide Fenster können mehr als anzeigen: neuer Ordner, umbenennen, löschen, aktualisieren — lokal wie auf dem Server.',
-        'Navigation: Doppelklick auf Ordner öffnet sie, „..“ geht eine Ebene nach oben.',
+        'Navigation: Doppelklick öffnet Ordner, der ↑-Knopf neben dem Pfadfeld geht eine Ebene nach oben.',
       ],
     },
     {
       title: 'Updates',
       body: [
-        'fileport prüft beim Start automatisch auf neue Versionen — der Changelog-Dialog öffnet sich, installiert wird erst nach deinem Klick.',
-        'Updates kommen signiert von GitHub; deine Verbindungsprofile bleiben dabei erhalten.',
+        'fileport prüft beim Start automatisch auf neue Versionen — der Changelog-Dialog öffnet sich, installiert wird erst nach Ihrem Klick.',
+        'Updates kommen signiert von GitHub; Ihre Verbindungsprofile bleiben dabei erhalten.',
       ],
     },
   ],
@@ -101,12 +103,12 @@ const de: Content = {
       title: 'Oberfläche',
       body: [
         'fileport ist ein klassischer Zwei-Fenster-Client:',
-        '• Links — dein lokaler Rechner: Ordner durchsuchen, Dateien auswählen',
+        '• Links — Ihr lokaler Rechner: Ordner durchsuchen, Dateien auswählen',
         '• Mitte — die Transfer-Pfeile: → hochladen, ← herunterladen',
         '• Rechts — der Server: Profilliste, solange nichts verbunden ist; danach das Server-Dateifenster',
         '• Unten — die Warteschlange mit allen Übertragungen',
-        'Beide Dateifenster zeigen Name, Größe und Änderungsdatum; Doppelklick öffnet Ordner, „..“ führt nach oben.',
-        'Das Pfadfeld über der Liste ist direkt editierbar: Pfad eintippen, Enter — das Fenster springt dorthin.',
+        'Beide Dateifenster zeigen Name, Größe und Änderungsdatum; Doppelklick öffnet Ordner (auch Symlinks auf Ordner), der ↑-Knopf führt eine Ebene nach oben, ⟳ lädt neu.',
+        'Das Pfadfeld über der Liste ist direkt editierbar: Pfad eintippen, Enter — das Fenster springt dorthin. Unter Windows wechseln Sie so auch das Laufwerk (z. B. D:\\).',
         'Dunkel oder Hell: Der Sonne-/Mond-Button rechts in der Kopfzeile schaltet den Modus um; die Wahl bleibt beim nächsten Start erhalten.',
       ],
     },
@@ -115,9 +117,9 @@ const de: Content = {
       title: 'Verbindungen & Profile',
       body: [
         '„Neue Verbindung“ öffnet das Profil-Formular. Die Felder hängen vom Protokoll ab:',
-        '• SFTP — Host, Port (22), Benutzer, Passwort oder SSH-Schlüsseldatei (+ Passphrase)',
+        '• SFTP — Host, Port (22), Benutzer, Passwort oder SSH-Schlüsseldatei (+ Passphrase). „~/.ssh/id_ed25519“ wird auf Ihr Home-Verzeichnis aufgelöst',
         '• SCP — wie SFTP, aber für SSH-Server ohne SFTP-Subsystem: Transfers laufen über das klassische SCP-Protokoll, die Dateiverwaltung über Shell-Kommandos (ls, mkdir, rm, mv)',
-        '• rsync über SSH — Verwaltung wie bei SCP; die Transfers übernimmt das lokale rsync/ssh-Programm. Deshalb: SSH-Schlüsseldatei ohne Passphrase-Abfrage erforderlich (Passwort-Anmeldung gibt es hier nicht), und rsync muss lokal installiert sein (macOS/Linux: ab Werk)',
+        '• rsync über SSH — Verwaltung wie bei SCP; die Transfers übernimmt das lokale rsync/ssh-Programm. Deshalb: SSH-Schlüsseldatei ohne Passphrase-Abfrage erforderlich (Passwort-Anmeldung gibt es hier nicht), und rsync muss lokal installiert sein (macOS/Linux: ab Werk; Windows: rsync und ssh müssen im PATH liegen, z. B. über MSYS2 oder cwRsync)',
         '• FTPS explizit — Host, Port (21), Benutzer, Passwort; TLS per AUTH TLS auf dem Standardport',
         '• FTPS implizit — wie explizit, aber TLS ab dem ersten Byte auf Port 990 (ältere Server)',
         '• WebDAV — Basis-URL (nur https://…), Benutzer, Passwort',
@@ -125,10 +127,23 @@ const de: Content = {
         '• S3 — Endpoint (nur https://…), Region, Bucket, Access Key, Secret Key; Path-Style für MinIO & Co.',
         '• Azure Blob Storage — Storage-Konto, Container, Access Key',
         '• Google Cloud Storage — Bucket und Service-Account-Schlüsseldatei (JSON)',
-        'fileport baut grundsätzlich nur verschlüsselte Verbindungen auf: Klartext-FTP und unverschlüsseltes WebDAV gibt es nicht — alte FTP-Profile verbinden automatisch per FTPS.',
-        'Für Server mit selbstsignierten Zertifikaten gibt es die Option, ungültige Zertifikate zu akzeptieren — nur einschalten, wenn du dem Server vertraust.',
-        'SSH-Sicherheit (SFTP, SCP, rsync): Beim ersten Verbinden merkt sich fileport den Host-Key des Servers im Profil („Trust on first use“) und prüft ihn bei jeder weiteren Verbindung — meldet sich plötzlich ein anderer Schlüssel, kommt keine Verbindung zustande.',
-        'Gespeicherte Profile erscheinen in der Liste rechts: verbinden per Klick, bearbeiten über das Stift-Symbol. Passwörter und Schlüssel bleiben lokal auf deinem Rechner und werden nie übertragen — außer an den Server, zu dem sie gehören.',
+        'fileport baut grundsätzlich nur verschlüsselte Verbindungen auf: Klartext-FTP und unverschlüsseltes WebDAV gibt es nicht — alte FTP-Profile verbinden automatisch per FTPS. WebDAV folgt Weiterleitungen nur auf https://-Adressen.',
+        'FTPS nutzt TLS 1.2 mit Session-Wiederaufnahme auf dem Datenkanal — das verlangen vsftpd, ProFTPD und FileZilla Server standardmäßig. Zertifikate prüft der Zertifikatsspeicher Ihres Systems.',
+        'Für Server mit selbstsignierten Zertifikaten (FTPS, WebDAV, S3) gibt es die Option, ungültige Zertifikate zu akzeptieren — nur einschalten, wenn Sie dem Server vertrauen.',
+        'Gespeicherte Profile erscheinen in der Liste rechts: verbinden per Klick, bearbeiten über das Stift-Symbol, löschen über ✕ (mit Rückfrage; das gespeicherte Geheimnis wird mit entfernt).',
+        'Geheimnisse (Passwörter, Secret Keys, Passphrasen) liegen im Schlüsselbund des Systems, nie in einer Datei. Beim Bearbeiten lässt ein leeres Feld das gespeicherte Geheimnis unverändert; „Gespeichertes Geheimnis löschen“ entfernt es (z. B. beim Wechsel auf eine Schlüsseldatei ohne Passphrase).',
+      ],
+    },
+    {
+      id: 'hostkeys',
+      title: 'SSH-Host-Keys',
+      body: [
+        'SFTP, SCP und rsync prüfen die Identität des Servers über seinen Host-Key:',
+        '• Erste Verbindung — fileport holt nur den Schlüssel (ohne Anmeldung) und zeigt seinen SHA256-Fingerprint. Vergleichen Sie ihn mit dem Server (ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub). Erst nach „Vertrauen & verbinden“ gehen Zugangsdaten an den Server; der Schlüssel wird im Profil gemerkt',
+        '• Jede weitere Verbindung — der Server muss genau diesen Schlüssel zeigen',
+        '• Geänderter Schlüssel — fileport verbindet nicht, sondern warnt mit altem und neuem Fingerprint. Das kann eine Neuinstallation sein oder ein Angriff (Man-in-the-Middle); dem neuen Schlüssel nur vertrauen, wenn Sie die Änderung bestätigen können',
+        'Ändern Sie Host oder Port eines Profils, verwirft fileport den gemerkten Schlüssel automatisch. Im Bearbeiten-Formular steht der gemerkte Fingerprint; „Host-Key vergessen“ setzt ihn zurück.',
+        'rsync: Das gestartete ssh-Programm prüft den Server gegen genau diesen gemerkten Schlüssel (eigene, temporäre known_hosts-Datei) — Ihre ~/.ssh/known_hosts wird weder gelesen noch verändert.',
       ],
     },
     {
@@ -139,8 +154,11 @@ const de: Content = {
         '• Datei auswählen und den Pfeil in der Mitte klicken (→ hochladen, ← herunterladen)',
         '• Doppelklick auf eine Datei — sie wandert direkt in die andere Seite',
         '• Mehrere Dateien nacheinander anstoßen — die Warteschlange arbeitet sie der Reihe nach ab',
+        'Ziel ist immer der Ordner, der auf der anderen Seite gerade offen ist. Liegt dort schon eine Datei gleichen Namens, fragt fileport vor dem Ersetzen nach.',
+        'Übertragen werden einzelne Dateien; ganze Ordner lassen sich (noch) nicht am Stück übertragen.',
         'Die Übertragung läuft sequenziell: genau ein Transfer zur Zeit, der Rest wartet. Das hält Verbindungen stabil und Server freundlich gestimmt.',
-        'Während jeder Übertragung rechnet fileport eine BLAKE3-Prüfsumme über die Daten mit. Bricht ein Download ab oder schlägt fehl, wird die unvollständige Zieldatei automatisch entfernt — halbe Dateien bleiben nicht liegen.',
+        'Während jeder Übertragung rechnet fileport eine BLAKE3-Prüfsumme über die Daten mit. Downloads schreibt fileport zuerst in eine versteckte Teildatei (.name.fileport-part) und ersetzt das Ziel erst nach vollständigem Erfolg — bricht ein Download ab oder schlägt fehl, verschwindet die Teildatei und eine vorhandene Datei bleibt unverändert.',
+        'Dateinamen, die auf Ihrem System nicht zulässig sind (unter Windows z. B. mit \\ : * ? " < > | oder Gerätenamen wie CON), lädt fileport nicht herunter, sondern meldet einen Fehler — so kann kein Server Dateien außerhalb des Zielordners ablegen.',
         'Nach einer erfolgreichen Übertragung aktualisiert sich die Zielseite automatisch.',
       ],
     },
@@ -149,9 +167,9 @@ const de: Content = {
       title: 'Warteschlange',
       body: [
         'Jede Übertragung erscheint unten mit Richtung, Namen und Fortschrittsbalken.',
-        '• Status: wartend, läuft, fertig, Fehler, abgebrochen',
-        '• Abbrechen — laufende und wartende Übertragungen lassen sich stoppen',
-        '• „Fertige aufräumen“ — entfernt erledigte, fehlgeschlagene und abgebrochene Einträge aus der Liste',
+        '• Status: wartet, läuft (Prozent), fertig, Fehler, abgebrochen',
+        '• ✕ — laufende und wartende Übertragungen lassen sich stoppen',
+        '• „Erledigte entfernen“ — entfernt fertige, fehlgeschlagene und abgebrochene Einträge aus der Liste',
         'Bei einem Fehler steht die Ursache direkt am Eintrag.',
       ],
     },
@@ -161,18 +179,34 @@ const de: Content = {
       body: [
         'Beide Fenster bieten die Grundwerkzeuge — lokal wie auf dem Server:',
         '• Neuer Ordner — legt ein Verzeichnis im aktuellen Pfad an',
-        '• Umbenennen — Datei oder Ordner auswählen, neuen Namen eingeben',
-        '• Löschen — mit Sicherheitsabfrage; Ordner werden samt Inhalt entfernt',
-        '• Aktualisieren — lädt die Ansicht neu',
+        '• Umbenennen — Datei oder Ordner auswählen, neuen Namen eingeben (Enter bestätigt, Esc bricht ab)',
+        '• Löschen — mit Sicherheitsabfrage; Ordner werden samt Inhalt entfernt (bei allen Protokollen). Symlinks werden als Link gelöscht, ihr Ziel bleibt erhalten',
+        '• Aktualisieren (⟳) — lädt die Ansicht neu',
+        'Namen dürfen weder „/“ noch „\\“ enthalten und nicht „.“ oder „..“ sein.',
+        'Objektspeicher (S3, Azure, GCS) kennen keine echten Ordner: Ein neuer Ordner ist ein unsichtbares Marker-Objekt, und das Umbenennen eines Ordners verschiebt jedes Objekt darin einzeln (nicht atomar — bei sehr vielen Objekten dauert das).',
       ],
     },
     {
       id: 'updates',
       title: 'Updates',
       body: [
-        'fileport prüft bei jedem Start automatisch auf neue Versionen. Liegt eine bereit, öffnet sich der Update-Dialog mit dem Changelog — installiert wird erst nach deinem Klick.',
+        'fileport prüft bei jedem Start automatisch auf neue Versionen. Liegt eine bereit, öffnet sich der Update-Dialog mit dem Changelog — installiert wird erst nach Ihrem Klick.',
         'Manuell prüfen: „Nach Updates suchen“ oben rechts.',
         'Updates kommen signiert von GitHub (LAN-SOLO/file-port): Die App prüft die Signatur, bevor irgendetwas installiert wird. Profile und Einstellungen bleiben erhalten.',
+      ],
+    },
+    {
+      id: 'whatsnew',
+      title: 'Neu in 1.0',
+      body: [
+        'Version 1.0 ist die erste stabile Ausgabe. Gegenüber den 0.2-Testversionen:',
+        '• SSH-Host-Keys werden vor der ersten Anmeldung mit Fingerprint bestätigt; geänderte Schlüssel lösen eine Warnung aus, gemerkte Schlüssel lassen sich vergessen',
+        '• rsync prüft den Server gegen den gemerkten Host-Key statt ihn blind zu übernehmen',
+        '• FTPS funktioniert mit Servern, die TLS-Session-Wiederaufnahme verlangen (vsftpd & Co.); implizites FTPS überträgt jetzt Daten zuverlässig',
+        '• Rückfrage vor dem Ersetzen vorhandener Dateien; Downloads ersetzen das Ziel erst nach vollständigem Erfolg',
+        '• Ordner löschen bei SFTP und FTPS samt Inhalt, Ordner umbenennen bei S3/Azure/GCS',
+        '• Windows: „Ebene hoch“ bleibt auf der Laufwerkswurzel, unzulässige Dateinamen vom Server werden abgelehnt, rsync mit Laufwerkspfaden',
+        '• WebDAV: Dateinamen mit „&“ und Sonderzeichen werden korrekt angezeigt, die Wurzel zeigt keinen leeren Eintrag mehr',
       ],
     },
     {
@@ -180,6 +214,7 @@ const de: Content = {
       title: 'Was noch kommt',
       body: [
         'fileport wächst per Update weiter. Auf der Liste stehen unter anderem:',
+        '• Ordner am Stück übertragen, Mehrfachauswahl und Drag & Drop',
         '• Fortsetzen abgebrochener Übertragungen und sichtbare Prüfsummen-Verifikation (berechnet wird die BLAKE3-Prüfsumme schon heute bei jedem Transfer)',
         '• Cloud-Speicher mit OAuth-Anmeldung (Dropbox, Google Drive, OneDrive)',
         '• Direkt-Drop: Dateien Ende-zu-Ende-verschlüsselt von Gerät zu Gerät',
@@ -190,8 +225,8 @@ const de: Content = {
       id: 'privacy',
       title: 'Privatsphäre',
       body: [
-        'fileport läuft lokal: kein Konto, keine Telemetrie, keine Zwischenserver — Übertragungen gehen direkt von dir zum Zielserver.',
-        'Zugangsdaten bleiben auf deinem Rechner. Die einzige weitere Netzwerkverbindung ist der Update-Check gegen GitHub.',
+        'fileport läuft lokal: kein Konto, keine Telemetrie, keine Zwischenserver — Übertragungen gehen direkt von Ihnen zum Zielserver.',
+        'Zugangsdaten bleiben auf Ihrem Rechner (Schlüsselbund des Systems) und gehen nur an den Server, zu dem sie gehören. Die einzige weitere Netzwerkverbindung ist der Update-Check gegen GitHub.',
       ],
     },
   ],
@@ -228,6 +263,7 @@ const en: Content = {
         '• S3: endpoint, region, bucket, access and secret key',
         '• Azure: storage account, container, access key — GCS: bucket and service account file',
         '“Save & connect” stores the profile — next time a single click in the profile list is enough.',
+        'For SSH servers fileport shows the server’s fingerprint on the first connection. Your password or key is only sent after you confirm it.',
       ],
     },
     {
@@ -237,6 +273,7 @@ const en: Content = {
         '• → uploads the local file to the server',
         '• ← fetches the server file to your machine',
         'Even faster: double-click a file to transfer it straight to the other side.',
+        'If the file already exists in the target folder, fileport asks before replacing it.',
       ],
     },
     {
@@ -250,7 +287,7 @@ const en: Content = {
       title: 'Managing files',
       body: [
         'Both panes can do more than browse: new folder, rename, delete, refresh — locally and on the server.',
-        'Navigation: double-click opens folders, “..” goes one level up.',
+        'Navigation: double-click opens folders, the ↑ button next to the path field goes one level up.',
       ],
     },
     {
@@ -271,8 +308,8 @@ const en: Content = {
         '• Middle — the transfer arrows: → upload, ← download',
         '• Right — the server: the profile list while disconnected, the server file pane once connected',
         '• Bottom — the queue with all transfers',
-        'Both panes show name, size and modified date; double-click opens folders, “..” goes up.',
-        'The path field above the list is directly editable: type a path, hit Enter — the pane jumps there.',
+        'Both panes show name, size and modified date; double-click opens folders (including symlinks to folders), the ↑ button goes up one level, ⟳ reloads.',
+        'The path field above the list is directly editable: type a path, hit Enter — the pane jumps there. On Windows this is also how you switch drives (e.g. D:\\).',
         'Dark or light: the sun/moon button on the right of the header switches the mode; your choice is kept for the next start.',
       ],
     },
@@ -281,9 +318,9 @@ const en: Content = {
       title: 'Connections & profiles',
       body: [
         '“New connection” opens the profile form. Fields depend on the protocol:',
-        '• SFTP — host, port (22), user, password or SSH key file (+ passphrase)',
+        '• SFTP — host, port (22), user, password or SSH key file (+ passphrase). “~/.ssh/id_ed25519” resolves to your home directory',
         '• SCP — like SFTP, but for SSH servers without an SFTP subsystem: transfers use the classic SCP protocol, file management runs over shell commands (ls, mkdir, rm, mv)',
-        '• rsync over SSH — management like SCP; transfers are handled by your local rsync/ssh programs. Hence: an SSH key file without a passphrase prompt is required (no password login here), and rsync must be installed locally (macOS/Linux: out of the box)',
+        '• rsync over SSH — management like SCP; transfers are handled by your local rsync/ssh programs. Hence: an SSH key file without a passphrase prompt is required (no password login here), and rsync must be installed locally (macOS/Linux: out of the box; Windows: rsync and ssh must be on the PATH, e.g. via MSYS2 or cwRsync)',
         '• FTPS explicit — host, port (21), user, password; TLS via AUTH TLS on the standard port',
         '• FTPS implicit — like explicit, but TLS from the first byte on port 990 (older servers)',
         '• WebDAV — base URL (https:// only), user, password',
@@ -291,10 +328,23 @@ const en: Content = {
         '• S3 — endpoint (https:// only), region, bucket, access key, secret key; path-style for MinIO & co.',
         '• Azure Blob Storage — storage account, container, access key',
         '• Google Cloud Storage — bucket and service account key file (JSON)',
-        'fileport only ever establishes encrypted connections: there is no plaintext FTP and no unencrypted WebDAV — old FTP profiles automatically connect via FTPS.',
-        'For servers with self-signed certificates there is an option to accept invalid certificates — only enable it if you trust the server.',
-        'SSH safety (SFTP, SCP, rsync): on the first connection fileport remembers the server’s host key in the profile (“trust on first use”) and verifies it on every later connection — if a different key suddenly shows up, the connection is refused.',
-        'Saved profiles appear in the list on the right: connect with a click, edit via the pencil icon. Passwords and keys stay local on your machine and are never sent anywhere — except to the server they belong to.',
+        'fileport only ever establishes encrypted connections: there is no plaintext FTP and no unencrypted WebDAV — old FTP profiles automatically connect via FTPS. WebDAV only follows redirects to https:// addresses.',
+        'FTPS uses TLS 1.2 with session resumption on the data channel — which vsftpd, ProFTPD and FileZilla Server require by default. Certificates are checked against your system’s certificate store.',
+        'For servers with self-signed certificates (FTPS, WebDAV, S3) there is an option to accept invalid certificates — only enable it if you trust the server.',
+        'Saved profiles appear in the list on the right: connect with a click, edit via the pencil icon, delete via ✕ (with confirmation; the stored secret is removed too).',
+        'Secrets (passwords, secret keys, passphrases) live in the system keychain, never in a file. When editing, an empty field keeps the stored secret; “Delete stored secret” removes it (e.g. when switching to a key file without passphrase).',
+      ],
+    },
+    {
+      id: 'hostkeys',
+      title: 'SSH host keys',
+      body: [
+        'SFTP, SCP and rsync verify the server’s identity via its host key:',
+        '• First connection — fileport only fetches the key (without logging in) and shows its SHA256 fingerprint. Compare it with the server (ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub). Credentials are only sent after “Trust & connect”; the key is remembered in the profile',
+        '• Every later connection — the server must present exactly this key',
+        '• Changed key — fileport does not connect but warns with the old and new fingerprint. This may be a reinstall or an attack (man-in-the-middle); only trust the new key if you can confirm the change',
+        'If you change a profile’s host or port, fileport discards the remembered key automatically. The edit form shows the remembered fingerprint; “Forget host key” resets it.',
+        'rsync: the spawned ssh program verifies the server against exactly this remembered key (its own temporary known_hosts file) — your ~/.ssh/known_hosts is neither read nor modified.',
       ],
     },
     {
@@ -305,8 +355,11 @@ const en: Content = {
         '• Select a file and click the middle arrow (→ upload, ← download)',
         '• Double-click a file — it goes straight to the other side',
         '• Kick off several files — the queue works through them in order',
+        'The target is always the folder currently open on the other side. If a file with the same name already exists there, fileport asks before replacing it.',
+        'Transfers work on single files; whole folders cannot be transferred in one go (yet).',
         'Transfers run sequentially: exactly one at a time, the rest waits. That keeps connections stable and servers happy.',
-        'During every transfer fileport computes a BLAKE3 checksum over the data. If a download aborts or fails, the incomplete target file is removed automatically — no half-written files are left behind.',
+        'During every transfer fileport computes a BLAKE3 checksum over the data. Downloads are first written to a hidden partial file (.name.fileport-part) and only replace the target after full success — if a download aborts or fails, the partial file is removed and an existing file stays untouched.',
+        'File names that are not allowed on your system (on Windows e.g. containing \\ : * ? " < > | or device names like CON) are not downloaded; fileport reports an error instead — so no server can place files outside the target folder.',
         'After a successful transfer the target pane refreshes automatically.',
       ],
     },
@@ -315,8 +368,8 @@ const en: Content = {
       title: 'Queue',
       body: [
         'Every transfer appears at the bottom with direction, name and a progress bar.',
-        '• States: queued, running, done, error, cancelled',
-        '• Cancel — running and queued transfers can be stopped',
+        '• States: queued, running (percent), done, error, cancelled',
+        '• ✕ — running and queued transfers can be stopped',
         '• “Clear finished” — removes done, failed and cancelled entries from the list',
         'On errors, the cause is shown right on the entry.',
       ],
@@ -327,9 +380,11 @@ const en: Content = {
       body: [
         'Both panes offer the basics — locally and on the server:',
         '• New folder — creates a directory in the current path',
-        '• Rename — select a file or folder, enter the new name',
-        '• Delete — with confirmation; folders are removed with their contents',
-        '• Refresh — reloads the view',
+        '• Rename — select a file or folder, enter the new name (Enter confirms, Esc cancels)',
+        '• Delete — with confirmation; folders are removed with their contents (on every protocol). Symlinks are deleted as links, their target stays',
+        '• Refresh (⟳) — reloads the view',
+        'Names must not contain “/” or “\\” and must not be “.” or “..”.',
+        'Object stores (S3, Azure, GCS) have no real folders: a new folder is an invisible marker object, and renaming a folder moves every object inside it one by one (not atomic — with many objects this takes a while).',
       ],
     },
     {
@@ -342,10 +397,25 @@ const en: Content = {
       ],
     },
     {
+      id: 'whatsnew',
+      title: 'New in 1.0',
+      body: [
+        'Version 1.0 is the first stable release. Compared to the 0.2 test builds:',
+        '• SSH host keys are confirmed by fingerprint before the first login; changed keys trigger a warning, remembered keys can be forgotten',
+        '• rsync verifies the server against the remembered host key instead of accepting it blindly',
+        '• FTPS works with servers that require TLS session resumption (vsftpd & co.); implicit FTPS now transfers data reliably',
+        '• Confirmation before replacing existing files; downloads only replace the target after full success',
+        '• Deleting folders with contents over SFTP and FTPS, renaming folders on S3/Azure/GCS',
+        '• Windows: “Go up” stays on the drive root, server file names that are invalid on Windows are rejected, rsync with drive paths',
+        '• WebDAV: file names with “&” and special characters display correctly, the root no longer shows an empty entry',
+      ],
+    },
+    {
       id: 'roadmap',
       title: 'What’s coming',
       body: [
         'fileport keeps growing via updates. On the list, among other things:',
+        '• Transferring whole folders, multi-select and drag & drop',
         '• Resuming interrupted transfers and visible checksum verification (the BLAKE3 checksum is already computed on every transfer today)',
         '• Cloud storage with OAuth sign-in (Dropbox, Google Drive, OneDrive)',
         '• Direct drop: end-to-end-encrypted device-to-device transfers',
@@ -357,7 +427,7 @@ const en: Content = {
       title: 'Privacy',
       body: [
         'fileport runs locally: no account, no telemetry, no relay servers — transfers go straight from you to the target server.',
-        'Credentials stay on your machine. The only other network connection is the update check against GitHub.',
+        'Credentials stay on your machine (system keychain) and only go to the server they belong to. The only other network connection is the update check against GitHub.',
       ],
     },
   ],
@@ -372,15 +442,23 @@ export default function Help() {
     navigator.language.toLowerCase().startsWith('de') ? 'de' : 'en'
   );
   const c = helpLang === 'de' ? de : en;
-  const [mode, setMode] = useState<'closed' | 'tutorial' | 'manual'>(() =>
-    localStorage.getItem(SEEN_KEY) ? 'closed' : 'tutorial'
-  );
+  const [mode, setMode] = useState<'closed' | 'tutorial' | 'manual'>(() => {
+    try {
+      return localStorage.getItem(SEEN_KEY) ? 'closed' : 'tutorial';
+    } catch {
+      return 'tutorial';
+    }
+  });
   const [step, setStep] = useState(0);
   const [sel, setSel] = useState(c.sections[0].id);
   const [q, setQ] = useState('');
 
   const close = () => {
-    localStorage.setItem(SEEN_KEY, '1');
+    try {
+      localStorage.setItem(SEEN_KEY, '1');
+    } catch {
+      // ohne localStorage erscheint das Tutorial beim nächsten Start erneut
+    }
     setMode('closed');
     setStep(0);
   };

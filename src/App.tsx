@@ -58,10 +58,12 @@ export default function App() {
     []
   );
   const onLocalEntries = useCallback((list: Entry[]) => {
-    localNames.current = new Set(list.map((e) => e.name));
+    // Klein geschrieben: macOS (APFS) und Windows unterscheiden Groß-/Kleinschreibung
+    // nicht — „Report.pdf“ würde „report.pdf“ sonst ohne Rückfrage ersetzen.
+    localNames.current = new Set(list.map((e) => e.name.toLowerCase()));
   }, []);
   const onRemoteEntries = useCallback((list: Entry[]) => {
-    remoteNames.current = new Set(list.map((e) => e.name));
+    remoteNames.current = new Set(list.map((e) => e.name.toLowerCase()));
   }, []);
 
   useEffect(() => applyTheme(theme), [theme]);
@@ -138,7 +140,14 @@ export default function App() {
     if (remoteConn === null) return;
     const src = explicit ?? (direction === 'upload' ? localSel.entry : remoteSel.entry);
     if (!src || src.kind === 'dir') return;
-    const targetName = src.name;
+    // Server-Namen mit Pfadtrennern (z. B. „a\\b“ von einem Linux-Server) nie
+    // in einen lokalen Pfad einbauen — sie würden unter Windows Unterordner
+    // adressieren.
+    if (direction === 'download' && /[/\\]/.test(src.name)) {
+      toast(`${t.invalidName} (${src.name})`, true);
+      return;
+    }
+    const targetName = src.name.toLowerCase();
     const exists =
       direction === 'upload'
         ? remoteNames.current.has(targetName)

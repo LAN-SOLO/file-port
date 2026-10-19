@@ -6,7 +6,7 @@
 //! (`.<name>.fileport-part`) und ersetzen das Ziel erst nach vollständigem
 //! Erfolg — eine bestehende Datei bleibt bei Abbruch/Fehler unangetastet.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, Instant};
@@ -22,6 +22,10 @@ use crate::engine::Engine;
 pub struct Transfers {
     /// Im Arc, damit Transfer-Tasks sich nach Abschluss selbst austragen.
     active: Arc<Mutex<HashMap<u32, CancelToken>>>,
+    /// Abbrüche, die eintreffen, bevor `transfer_start` den Transfer
+    /// registriert hat (beide Commands laufen nebenläufig) — sonst ginge
+    /// ein früher Klick auf „Abbrechen" verloren.
+    early_cancel: Mutex<HashSet<u32>>,
 }
 
 /// Prüft den lokalen Zielpfad eines Downloads. Der Dateiname stammt vom
@@ -80,6 +84,14 @@ pub(crate) fn part_path(target: &Path) -> PathBuf {
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
+    // Sehr lange Namen: Präfix + Suffix sprengten die 255-Byte-Grenze der
+    // Dateisysteme — dann eine kurze, eindeutige Teildatei verwenden.
+    if name.len() > 200 {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        name.hash(&mut h);
+        return target.with_file_name(format!(".fileport-{:016x}.fileport-part", h.finish()));
+    }
     target.with_file_name(format!(".{name}.fileport-part"))
 }
 
@@ -135,6 +147,9 @@ pub async fn transfer_start(
             return Err(format!("Transfer {id} läuft bereits"));
         }
         active.insert(id, cancel.clone());
+        if transfers.early_cancel.lock().await.remove(&id) {
+            cancel.cancel();
+        }
     }
 
     // Fortschritt drosseln: höchstens alle ~80 ms ein Event, plus das letzte.
@@ -211,8 +226,13 @@ pub async fn transfer_cancel(
     transfers: tauri::State<'_, Transfers>,
     id: u32,
 ) -> Result<(), String> {
-    if let Some(token) = transfers.active.lock().await.get(&id) {
-        token.cancel();
+    let active = transfers.active.lock().await;
+    match active.get(&id) {
+        Some(token) => token.cancel(),
+        // Noch nicht gestartet: vormerken, transfer_start bricht dann sofort ab.
+        None => {
+            transfers.early_cancel.lock().await.insert(id);
+        }
     }
     Ok(())
 }
@@ -265,5 +285,10 @@ mod tests {
         let part = part_path(&target);
         assert_eq!(part.parent(), target.parent());
         assert_eq!(part.file_name().unwrap(), ".x.bin.fileport-part");
+
+        let long = std::env::temp_dir().join(format!("{}.bin", "ä".repeat(120)));
+        let part = part_path(&long);
+        assert_eq!(part.parent(), long.parent());
+        assert!(part.file_name().unwrap().len() < 64);
     }
 }

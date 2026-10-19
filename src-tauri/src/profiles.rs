@@ -6,9 +6,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use fileport_core::{
-    AzureConfig, Backend, FtpBackend, FtpConfig, FtpSecurity, GcsConfig, ObjectBackend,
-    RsyncBackend, S3Config, ScpBackend, SftpBackend, SmbBackend, SmbConfig, SshAuth, SshConfig,
-    WebdavBackend, WebdavConfig,
+    host_key_fingerprint, probe_host_key, AzureConfig, Backend, FpError, FtpBackend, FtpConfig,
+    FtpSecurity, GcsConfig, ObjectBackend, RsyncBackend, S3Config, ScpBackend, SftpBackend,
+    SmbBackend, SmbConfig, SshAuth, SshConfig, WebdavBackend, WebdavConfig,
 };
 use serde::{Deserialize, Serialize};
 use tauri::Manager;
@@ -100,7 +100,92 @@ fn load_profiles(app: &tauri::AppHandle) -> Result<Vec<Profile>, String> {
 fn store_profiles(app: &tauri::AppHandle, profiles: &[Profile]) -> Result<(), String> {
     let path = profiles_path(app)?;
     let raw = serde_json::to_string_pretty(profiles).map_err(|e| e.to_string())?;
-    std::fs::write(&path, raw).map_err(|e| e.to_string())
+    // Atomar schreiben: erst Temp-Datei, dann umbenennen — ein Absturz mitten
+    // im Schreiben hinterlässt nie eine halbe profiles.json.
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, raw).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, &path).map_err(|e| {
+        let _ = std::fs::remove_file(&tmp);
+        e.to_string()
+    })
+}
+
+impl Protocol {
+    fn is_ssh(&self) -> bool {
+        matches!(self, Protocol::Sftp | Protocol::Scp | Protocol::Rsync)
+    }
+
+    /// Protokolle mit Host-/Port-Feldern (alles außer WebDAV und Clouds).
+    fn uses_host(&self) -> bool {
+        !matches!(
+            self,
+            Protocol::Webdav | Protocol::S3 | Protocol::Azure | Protocol::Gcs
+        )
+    }
+
+    fn default_port(&self) -> u16 {
+        match self {
+            Protocol::Sftp | Protocol::Scp | Protocol::Rsync => 22,
+            Protocol::FtpsImplicit => 990,
+            Protocol::Ftp | Protocol::Ftps => 21,
+            Protocol::Smb => 445,
+            _ => 0,
+        }
+    }
+}
+
+/// `~` bzw. `~/…` (auch `~\…` unter Windows) auf das Home-Verzeichnis
+/// abbilden — das Formular schlägt `~/.ssh/id_ed25519` vor.
+pub(crate) fn expand_home(path: &str) -> PathBuf {
+    let trimmed = path.trim();
+    let rest = if trimmed == "~" {
+        Some("")
+    } else {
+        trimmed
+            .strip_prefix("~/")
+            .or_else(|| trimmed.strip_prefix("~\\"))
+    };
+    match (rest, home_dir()) {
+        (Some(""), Some(home)) => home,
+        (Some(rest), Some(home)) => home.join(rest),
+        _ => PathBuf::from(trimmed),
+    }
+}
+
+fn home_dir() -> Option<PathBuf> {
+    std::env::var_os("HOME")
+        .filter(|h| !h.is_empty())
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+}
+
+/// Host-Feld prüfen: nicht leer, keine Leerzeichen/Steuerzeichen und kein
+/// führendes `-` (würde beim gespawnten ssh/rsync als Option gelesen).
+pub(crate) fn validate_host(host: &str) -> Result<(), String> {
+    let h = host.trim();
+    if h.is_empty() {
+        return Err("Host fehlt".into());
+    }
+    if h.starts_with('-') || h.chars().any(|c| c.is_whitespace() || c.is_control()) {
+        return Err(format!("Ungültiger Host: {h}"));
+    }
+    Ok(())
+}
+
+/// Benutzername für SSH/rsync: kein führendes `-`, keine Leer-/Steuerzeichen,
+/// kein `@`/`:` (würde die rsync-Zieladresse verfälschen).
+fn validate_ssh_user(user: &str) -> Result<(), String> {
+    if user.is_empty() {
+        return Err("Benutzer fehlt".into());
+    }
+    if user.starts_with('-')
+        || user
+            .chars()
+            .any(|c| c.is_whitespace() || c.is_control() || c == '@' || c == ':')
+    {
+        return Err(format!("Ungültiger Benutzername: {user}"));
+    }
+    Ok(())
 }
 
 /// Geheimnis eines Profils im Schlüsselbund ablegen/lesen/löschen.
@@ -145,22 +230,55 @@ pub async fn profiles_list(app: tauri::AppHandle) -> Result<Vec<Profile>, String
 
 /// Legt ein Profil an oder aktualisiert es; `secret` (Passwort/Secret Key/
 /// Passphrase) wandert in den Schlüsselbund, nie in die JSON-Datei.
+/// `clear_secret` entfernt ein gespeichertes Geheimnis (z. B. beim Wechsel
+/// von Passwort auf Schlüsseldatei ohne Passphrase).
+///
+/// Der gemerkte Host-Key gehört dem Backend: Die UI kann ihn weder setzen
+/// noch überschreiben. Ändern sich Host, Port oder Protokoll, wird er
+/// verworfen (neuer Server → neue Bestätigung).
 #[tauri::command]
 pub async fn profile_save(
     app: tauri::AppHandle,
     mut profile: Profile,
     secret: Option<String>,
+    clear_secret: Option<bool>,
 ) -> Result<Profile, String> {
     let mut profiles = load_profiles(&app)?;
+    profile.name = profile.name.trim().to_string();
+    if profile.name.is_empty() {
+        return Err("Name fehlt".into());
+    }
+    profile.host = profile.host.trim().to_string();
+    if profile.protocol.uses_host() && !profile.host.is_empty() {
+        validate_host(&profile.host)?;
+    }
     if profile.id.is_empty() {
         let millis = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_millis())
             .unwrap_or(0);
-        profile.id = format!("p{millis}");
+        let mut id = format!("p{millis}");
+        while profiles.iter().any(|p| p.id == id) {
+            id.push('x');
+        }
+        profile.id = id;
+        profile.host_key = String::new();
+    } else {
+        profile.host_key = match profiles.iter().find(|p| p.id == profile.id) {
+            Some(old)
+                if old.host == profile.host
+                    && old.port == profile.port
+                    && old.protocol.is_ssh() == profile.protocol.is_ssh() =>
+            {
+                old.host_key.clone()
+            }
+            _ => String::new(),
+        };
     }
     if let Some(secret) = secret.filter(|s| !s.is_empty()) {
         secret_set(profile.id.clone(), secret).await?;
+    } else if clear_secret.unwrap_or(false) {
+        secret_delete(profile.id.clone()).await;
     }
     match profiles.iter_mut().find(|p| p.id == profile.id) {
         Some(slot) => *slot = profile.clone(),
@@ -179,20 +297,49 @@ pub async fn profile_delete(app: tauri::AppHandle, id: String) -> Result<(), Str
     Ok(())
 }
 
+/// Gemerkten Host-Key eines Profils verwerfen — die nächste Verbindung
+/// fragt wieder nach (z. B. nach einer Server-Neuinstallation).
+#[tauri::command]
+pub async fn profile_reset_host_key(app: tauri::AppHandle, id: String) -> Result<(), String> {
+    let mut profiles = load_profiles(&app)?;
+    let profile = profiles
+        .iter_mut()
+        .find(|p| p.id == id)
+        .ok_or("Profil nicht gefunden")?;
+    profile.host_key.clear();
+    store_profiles(&app, &profiles)
+}
+
+/// Rückfrage zu einem SSH-Host-Key, bevor Zugangsdaten an den Server gehen.
+#[derive(Serialize)]
+pub struct HostKeyPrompt {
+    /// SHA256-Fingerprint, wie ihn `ssh-keygen -lf` zeigt.
+    pub fingerprint: String,
+    /// Der Key selbst (OpenSSH-Format) — die UI reicht ihn bei Bestätigung
+    /// als `trust_host_key` zurück.
+    pub key: String,
+    /// true: Der Server zeigt einen ANDEREN Key als den gespeicherten.
+    pub changed: bool,
+    pub old_fingerprint: Option<String>,
+}
+
+/// Ergebnis von `connect`: entweder eine offene Verbindung (`conn`) oder
+/// eine Host-Key-Rückfrage (`host_key`), die die UI bestätigen muss.
 #[derive(Serialize)]
 pub struct ConnectResult {
-    pub conn: u32,
+    pub conn: Option<u32>,
     pub label: String,
+    pub host_key: Option<HostKeyPrompt>,
 }
 
 /// SSH-Verbindungsdaten (SFTP/SCP/rsync) aus einem Profil bauen —
 /// Schlüsseldatei vor Passwort, Secret ist dann die Passphrase.
-fn ssh_config(profile: &Profile, secret: String) -> SshConfig {
-    let auth = if profile.key_file.is_empty() {
+fn ssh_config(profile: &Profile, secret: String, expected: String) -> SshConfig {
+    let auth = if profile.key_file.trim().is_empty() {
         SshAuth::Password(secret)
     } else {
         SshAuth::KeyFile {
-            path: profile.key_file.clone().into(),
+            path: expand_home(&profile.key_file),
             passphrase: (!secret.is_empty()).then_some(secret),
         }
     };
@@ -201,56 +348,118 @@ fn ssh_config(profile: &Profile, secret: String) -> SshConfig {
         port: if profile.port == 0 { 22 } else { profile.port },
         user: profile.user.clone(),
         auth,
-        expected_host_key: (!profile.host_key.is_empty()).then(|| profile.host_key.clone()),
+        expected_host_key: Some(expected),
     }
 }
 
-/// Baut die Verbindung zu einem gespeicherten Profil auf. Bei SFTP, SCP und
-/// rsync wird der Host-Key nach Trust-on-first-use im Profil gemerkt; ein
-/// später geänderter Server-Key lässt die Verbindung scheitern.
+fn fingerprint(key: &str) -> String {
+    host_key_fingerprint(key).unwrap_or_else(|| key.to_string())
+}
+
+/// Baut die Verbindung zu einem gespeicherten Profil auf.
+///
+/// SFTP, SCP und rsync: Ist noch kein Host-Key gemerkt, holt fileport nur
+/// den Key (ohne Anmeldung!) und gibt ihn als Rückfrage zurück; erst mit
+/// `trust_host_key` (dem bestätigten Key) wird verbunden und der Key im
+/// Profil gespeichert. Zeigt der Server später einen anderen Key, kommt
+/// ebenfalls eine Rückfrage (`changed = true`) statt einer Verbindung.
 #[tauri::command]
 pub async fn connect(
     app: tauri::AppHandle,
     engine: tauri::State<'_, Engine>,
     id: String,
+    trust_host_key: Option<String>,
 ) -> Result<ConnectResult, String> {
     let mut profiles = load_profiles(&app)?;
     let profile = profiles
         .iter_mut()
         .find(|p| p.id == id)
         .ok_or("Profil nicht gefunden")?;
+    let trust = trust_host_key
+        .map(|k| k.trim().to_string())
+        .filter(|k| !k.is_empty());
+
+    if profile.protocol.is_ssh() {
+        validate_host(&profile.host)?;
+        validate_ssh_user(&profile.user)?;
+    } else if profile.protocol.uses_host() {
+        validate_host(&profile.host)?;
+    }
+
+    // SSH: unbekannter Server → erst Key zeigen, dann (nach Bestätigung) anmelden.
+    let mut ssh_expected = String::new();
+    if profile.protocol.is_ssh() {
+        ssh_expected = match (&trust, profile.host_key.is_empty()) {
+            (Some(k), _) => k.clone(),
+            (None, false) => profile.host_key.clone(),
+            (None, true) => {
+                let port = if profile.port == 0 {
+                    profile.protocol.default_port()
+                } else {
+                    profile.port
+                };
+                let key = probe_host_key(&profile.host, port)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                return Ok(ConnectResult {
+                    conn: None,
+                    label: String::new(),
+                    host_key: Some(HostKeyPrompt {
+                        fingerprint: fingerprint(&key),
+                        key,
+                        changed: false,
+                        old_fingerprint: None,
+                    }),
+                });
+            }
+        };
+    }
+
     let secret = secret_get(profile.id.clone()).await?.unwrap_or_default();
+    let ssh_result = |e: FpError, profile: &Profile| -> Result<ConnectResult, String> {
+        match e {
+            FpError::HostKeyMismatch { seen, .. } if !seen.is_empty() => Ok(ConnectResult {
+                conn: None,
+                label: String::new(),
+                host_key: Some(HostKeyPrompt {
+                    fingerprint: fingerprint(&seen),
+                    key: seen,
+                    changed: true,
+                    old_fingerprint: (!profile.host_key.is_empty())
+                        .then(|| fingerprint(&profile.host_key)),
+                }),
+            }),
+            other => Err(other.to_string()),
+        }
+    };
 
     let backend: Arc<dyn Backend> = match profile.protocol {
-        Protocol::Sftp => {
-            let be = SftpBackend::connect(ssh_config(profile, secret))
-                .await
-                .map_err(|e| e.to_string())?;
-            if profile.host_key.is_empty() {
-                profile.host_key = be.host_key().to_string();
-                store_profiles(&app, &profiles.clone())?;
+        Protocol::Sftp | Protocol::Scp | Protocol::Rsync => {
+            let cfg = ssh_config(profile, secret, ssh_expected);
+            let connected: Result<(Arc<dyn Backend>, String), FpError> = match profile.protocol {
+                Protocol::Sftp => SftpBackend::connect(cfg).await.map(|be| {
+                    let key = be.host_key().to_string();
+                    (Arc::new(be) as Arc<dyn Backend>, key)
+                }),
+                Protocol::Scp => ScpBackend::connect(cfg).await.map(|be| {
+                    let key = be.host_key().to_string();
+                    (Arc::new(be) as Arc<dyn Backend>, key)
+                }),
+                _ => RsyncBackend::connect(cfg).await.map(|be| {
+                    let key = be.host_key().to_string();
+                    (Arc::new(be) as Arc<dyn Backend>, key)
+                }),
+            };
+            match connected {
+                Ok((be, key)) => {
+                    if !key.is_empty() && key.trim() != profile.host_key.trim() {
+                        profile.host_key = key;
+                        store_profiles(&app, &profiles)?;
+                    }
+                    be
+                }
+                Err(e) => return ssh_result(e, profile),
             }
-            Arc::new(be)
-        }
-        Protocol::Scp => {
-            let be = ScpBackend::connect(ssh_config(profile, secret))
-                .await
-                .map_err(|e| e.to_string())?;
-            if profile.host_key.is_empty() {
-                profile.host_key = be.host_key().to_string();
-                store_profiles(&app, &profiles.clone())?;
-            }
-            Arc::new(be)
-        }
-        Protocol::Rsync => {
-            let be = RsyncBackend::connect(ssh_config(profile, secret))
-                .await
-                .map_err(|e| e.to_string())?;
-            if profile.host_key.is_empty() {
-                profile.host_key = be.host_key().to_string();
-                store_profiles(&app, &profiles.clone())?;
-            }
-            Arc::new(be)
         }
         Protocol::Smb => Arc::new(
             SmbBackend::connect(SmbConfig {
@@ -342,7 +551,7 @@ pub async fn connect(
         Protocol::Gcs => Arc::new(
             ObjectBackend::connect_gcs(GcsConfig {
                 bucket: profile.bucket.clone(),
-                key_file: profile.key_file.clone(),
+                key_file: expand_home(&profile.key_file).to_string_lossy().into_owned(),
             })
             .await
             .map_err(|e| e.to_string())?,
@@ -351,11 +560,53 @@ pub async fn connect(
 
     let label = backend.label();
     let conn = engine.insert(backend).await;
-    Ok(ConnectResult { conn, label })
+    Ok(ConnectResult {
+        conn: Some(conn),
+        label,
+        host_key: None,
+    })
 }
 
 #[tauri::command]
 pub async fn disconnect(engine: tauri::State<'_, Engine>, conn: u32) -> Result<(), String> {
     engine.remove(conn).await;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tilde_expands_to_home() {
+        let home = home_dir().expect("HOME/USERPROFILE gesetzt");
+        assert_eq!(expand_home("~/.ssh/id_ed25519"), home.join(".ssh/id_ed25519"));
+        assert_eq!(expand_home("~\\.ssh\\id"), home.join(".ssh\\id"));
+        assert_eq!(expand_home("~"), home);
+        assert_eq!(expand_home(" /abs/key "), PathBuf::from("/abs/key"));
+        assert_eq!(expand_home("~bob/key"), PathBuf::from("~bob/key"));
+    }
+
+    #[test]
+    fn host_and_user_validation() {
+        assert!(validate_host("example.com").is_ok());
+        assert!(validate_host("::1").is_ok());
+        assert!(validate_host("").is_err());
+        assert!(validate_host("-oProxyCommand=evil").is_err());
+        assert!(validate_host("a b").is_err());
+        assert!(validate_ssh_user("anna").is_ok());
+        assert!(validate_ssh_user("DOM\\anna").is_ok());
+        assert!(validate_ssh_user("-x").is_err());
+        assert!(validate_ssh_user("a@b").is_err());
+        assert!(validate_ssh_user("").is_err());
+    }
+
+    #[test]
+    fn old_ftp_profiles_still_parse() {
+        let raw = r#"[{"id":"p1","name":"alt","protocol":"ftp","host":"h"}]"#;
+        let p: Vec<Profile> = serde_json::from_str(raw).unwrap();
+        assert_eq!(p[0].protocol, Protocol::Ftp);
+        assert_eq!(p[0].protocol.default_port(), 21);
+        assert!(p[0].host_key.is_empty());
+    }
 }

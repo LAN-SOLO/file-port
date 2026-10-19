@@ -66,6 +66,7 @@ fn main() {
             profiles::profiles_list,
             profiles::profile_save,
             profiles::profile_delete,
+            profiles::profile_reset_host_key,
             profiles::connect,
             profiles::disconnect,
             transfers::transfer_start,

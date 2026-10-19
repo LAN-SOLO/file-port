@@ -3,9 +3,10 @@
 Datei-Transfer-Client für macOS, Windows und Linux: spricht SFTP, SCP,
 rsync über SSH, FTPS, WebDAV (HTTPS) und SMB 2/3, verbindet Clouds von
 S3-kompatiblen Diensten über Azure Blob und Google Cloud Storage bis
-(geplant) Dropbox, Google Drive und OneDrive — und überträgt abbruchsicher
-mit Prüfsummen, Warteschlange und Direkt-Drop von Gerät zu Gerät.
-Ausschließlich verschlüsselte Verbindungen: kein Klartext-FTP, kein SMB1. **Free** bleibt dauerhaft kostenlos und voll
+(geplant) Dropbox, Google Drive und OneDrive — und überträgt mit
+BLAKE3-Prüfsumme und Warteschlange (Direkt-Drop von Gerät zu Gerät geplant).
+Kein Klartext-FTP, kein SMB1; SMB ist nur verschlüsselt, wenn der Server
+SMB3-Verschlüsselung verlangt (sonst signiert). **Free** bleibt dauerhaft kostenlos und voll
 nutzbar; **fileport bridged** (12 €/Jahr = 1 €/Monat) ergänzt die
 Server-zu-Server-Brücke, AS2/OFTP2 (MFT) und Automatisierung.
 

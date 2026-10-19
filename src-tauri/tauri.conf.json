@@ -54,7 +54,7 @@
     ],
     "category": "Utility",
     "shortDescription": "Dateitransfer für jedes Protokoll",
-    "longDescription": "fileport spricht SFTP, FTP(S), SCP/rsync, WebDAV(S), HTTP(S) und mehr, verbindet die großen Cloud-Speicher — und überträgt abbruchsicher mit Prüfsummen. Lokal, ohne Konto, ohne Telemetrie.",
+    "longDescription": "fileport spricht SFTP, SCP, rsync über SSH, FTPS (explizit und implizit), WebDAV über HTTPS und SMB 2/3, dazu S3, Azure Blob Storage und Google Cloud Storage — ohne Klartext-FTP, mit BLAKE3-Prüfsumme je Übertragung. Lokal, ohne Konto, ohne Telemetrie.",
     "linux": {
       "deb": {
         "depends": []

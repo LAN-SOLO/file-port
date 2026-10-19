@@ -155,7 +155,8 @@ Nur **Windows**:
 
 18. Lokale Pane startet in `C:\Users\<name>`; ↑ bis `C:\` und dort bleiben; Pfadfeld `D:\` wechselt das Laufwerk.
 19. Download einer Server-Datei namens `a:b.txt`, `CON.txt` oder `x\..\y.txt` (z. B. auf Linux-SFTP
-    anlegen) → klarer Fehler in der Warteschlange, keine Datei außerhalb des Zielordners.
+    anlegen) → klarer Fehler (Namen mit `\`/`/` schon beim Einreihen als Hinweis, die übrigen in
+    der Warteschlange), keine Datei außerhalb des Zielordners.
 20. Verzeichnis-Symlink/Junction lokal löschen → nur der Link verschwindet.
 21. rsync-Transfer: kein aufblitzendes Konsolenfenster.
 22. Datei im Ziel geöffnet (z. B. in Excel) und Download mit Ersetzen → verständlicher Fehler,
@@ -166,3 +167,51 @@ Nur **macOS**:
 
 24. DMG notarisiert (`spctl -a -vv`); erster Start ohne Gatekeeper-Warnung.
 25. Schlüsselbund-Abfrage beim ersten Verbinden („Immer erlauben").
+
+## 6. Verifikation (unabhängige Zweitprüfung, 2026-10-19)
+
+Skeptische Nachprüfung des Audits auf Stand `46e28b9`; Befunde unten sind lokal committet.
+
+**Selbst ausgeführt**
+
+- `cargo test --workspace`: 20/20 Unit-Tests grün (13 core, 7 app; ITs ohne `FILEPORT_IT` übersprungen),
+  nach den Fixes weiterhin grün (Part-Datei-Test erweitert).
+- `cargo clippy --workspace --all-targets`: 0 Warnungen. `pnpm test`: 4/4. `pnpm build`: ok. `pnpm audit`: 0.
+- Docker-ITs neu gefahren: SFTP (atmoz/sftp) und FTPS explizit (vsftpd, `require_ssl_reuse`) grün;
+  FTPS implizit ohne `FILEPORT_IT_FTPS_IMPLICIT` übersprungen.
+- Zusatztest SFTP (Wegwerf-Test, nicht im Repo): Ordner mit Verzeichnis-Symlink rekursiv gelöscht →
+  Symlink-Ziel bleibt unangetastet; 20-MB-Datei `Größe & Leer.bin` hoch/runter, BLAKE3 identisch;
+  `probe_host_key`-Fingerprint == `ssh-keygen -lf` des Servers; derselbe Wert auch aus dem
+  UI-Algorithmus `fingerprintOf` (Node, WebCrypto).
+- Versionen: package.json, tauri.conf.json, src-tauri/Cargo.toml, Cargo.lock (`fileport-app`) = 1.0.0;
+  `fileport-core` bleibt als interne Bibliothek 0.1.7. build.yml: `pnpm test` nutzt Node-22-Glob
+  (`--test tests/*.test.ts` funktioniert auch unter cmd.exe auf Windows); aws-lc-sys war schon vor 1.0
+  (über reqwest) im Windows-Build — kein neues Build-Risiko. Signatur/Notarisierung unverändert.
+
+**Gefunden und behoben**
+
+1. *Datenverlust ohne Rückfrage auf macOS/Windows:* Die Ersetzen-Rückfrage verglich Namen
+   case-sensitiv. Auf APFS/NTFS hätte ein Download `Report.pdf` eine vorhandene `report.pdf`
+   stillschweigend ersetzt. Jetzt Vergleich ohne Groß-/Kleinschreibung (Up- und Download; eine
+   zusätzliche Rückfrage auf case-sensitiven Systemen ist harmlos).
+2. *Server-Namen mit `\` oder `/`* (auf Linux-Servern legal) wurden unter Windows in einen lokalen
+   Pfad mit Unterordnern eingebaut. Der Backend-Check fing `..` ab, nicht aber das Schreiben in einen
+   vorhandenen Unterordner. Die UI lehnt solche Downloads jetzt mit Hinweis ab.
+3. *Abbrechen-Klick ging verloren*, wenn er eintraf, bevor `transfer_start` den Transfer registriert
+   hatte (beide Commands laufen nebenläufig). Abbrüche werden jetzt vorgemerkt.
+4. *Sehr lange Dateinamen* (> 200 Byte): `.<name>.fileport-part` überschritt die 255-Byte-Grenze,
+   der Download scheiterte. Dann wird eine kurze Hash-Teildatei verwendet (Unit-Test).
+5. *Irreführende Sicherheitsaussage:* Handbuch („jede Verbindung … immer verschlüsselt“), README und
+   Paketbeschreibung (nannte noch FTP(S)/HTTP(S)) behaupteten durchgängige Verschlüsselung. SMB über
+   die `smb2`-Crate verschlüsselt nur, wenn der Server SMB3-Verschlüsselung verlangt, sonst ist es
+   nur signiert. Handbuch DE/EN, README und `longDescription` sagen das jetzt ehrlich.
+
+**Weiter offen (nicht behebbar ohne Hardware/Konten)**
+
+- Kein nativer Windows-Lauf: rsync-`-e`-Quoting mit Windows-Pfaden (temporäre known_hosts,
+  `-i C:\…`) für cwRsync/MSYS-ssh, Junction-Löschen, `CREATE_NO_WINDOW`: nur statisch geprüft.
+- Azure/GCS: weiterhin nur statisch geprüft und über InMemory-Unit-Tests.
+- Backend-Fehlermeldungen (core/app) sind deutsch und erscheinen so auch in der EN-Oberfläche.
+- `cargo audit` lokal nicht verfügbar.
+- Meine UI-Änderungen (Case-insensitiv-Check, Namen mit Trennern) sind nur typgeprüft/gebaut,
+  nicht im Mock-Harness gefahren.

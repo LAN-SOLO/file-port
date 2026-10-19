@@ -33,7 +33,8 @@ ersetzen nie still eine vorhandene Datei; Wiederholung bei kurzzeitig
 gesperrten Dateien unter Windows; Fehlermeldungen in der Sprache der
 Oberfläche (`src/errors.ts`); Schlüsseldateien mit BOM/CRLF; korrekte
 Änderungszeiten bei SCP/rsync-Servern in anderen Zeitzonen; Rückfrage
-beim Trennen mit laufenden Transfers.
+beim Trennen mit laufenden Transfers; die Warteschlange wartet, solange
+eine Ersetzen-Rückfrage offen ist.
 
 - **Phase 1 — Protokoll-Engine (fertig):** Der Rust-Core (`core/`,
   `fileport-core`) spricht über einen gemeinsamen `Backend`-Trait das lokale

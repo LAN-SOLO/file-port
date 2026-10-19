@@ -303,3 +303,41 @@ Ersetzen-Rückfrage statt stillem Ersetzen. 27. „Trennen“ bei laufendem Down
 Bestätigung „abgebrochen“, keine Teildatei. 28. SCP/rsync gegen Server in anderer Zeitzone →
 Änderungszeiten wie lokal per `ls -l` auf dem Server (umgerechnet). 29. EN-Systemsprache: ein
 Verbindungsfehler (falsches Passwort) erscheint englisch.
+
+## 8. Runde 2 – Verifikation (2026-10-20)
+
+Unabhängige Gegenprüfung von `5929792..eece5c4` mit dem Ziel, die Angaben aus §7 zu widerlegen.
+
+**Bestätigt (selbst ausgeführt):** `cargo test --workspace` grün (jetzt 28 Unit-Tests), `cargo clippy
+--workspace --all-targets` 0 Warnungen auf macOS; Windows-Typecheck und -Clippy
+(`x86_64-pc-windows-msvc`, gleiches Rezept wie §7: aws-lc-sys-Buildskript übersprungen, blake3 pure)
+grün — weiterhin nur Typprüfung, die `cfg!(windows)`-Zweige der Tests liefen nie. `pnpm test` 10/10,
+`pnpm build` ok. `cargo audit`: nur noch die in §7 genannten offenen Punkte (`rsa`, `zip`) plus
+„unmaintained“-Hinweise für Linux-only-Crates (zbus/zvariant, glib, unic-*, proc-macro-error).
+UI-Lauf im Headless-Chrome (Mock aus §7, um einen Fall erweitert): 106/106 Prüfpunkte, DE/EN ×
+hell/dunkel, 800 × 540. Stichproben L1/L3/L6/L7/L10/L13 ohne neuen Befund (kein `window.confirm`,
+Capability nur `core:default`, Updater-Endpoint/Pubkey unverändert, Jahreskorrektur jahresloser
+`ls`/`LIST`-Zeilen übernimmt suppaftp).
+
+**Gefunden und behoben**
+
+1. *Ersetzen-Rückfrage konnte Einträge verlieren (L9/L11):* Der Abarbeiter lief weiter, während die
+   Rückfrage offen war. Meldete ein zweiter Eintrag ebenfalls „existiert bereits“, verdrängte er die
+   offene Rückfrage — der erste Eintrag verschwand kommentarlos aus Warteschlange und Dialog.
+   Reproduziert im UI-Lauf (dreimal dieselbe Datei hochladen: ohne Fix fehlt die zweite Rückfrage).
+   Jetzt hält die Warteschlange an, solange eine Rückfrage offen ist.
+2. *Umbenennen nur der Groß-/Kleinschreibung auf Servern mit Unterscheidung (L5/L11):* Die Kollisions-
+   prüfung entfiel bei reinem Umschreiben komplett. Auf einem Linux-Server mit „a.txt“ und „A.txt“
+   ersetzte „a.txt → A.txt“ per `mv` (SCP/rsync) still die vorhandene „A.txt“. Jetzt wird immer
+   gelistet; nur der Quell-Eintrag selbst zählt nicht als Konflikt (Unit-Test `rename_conflict`).
+
+**Weiter offen / nur auf echter Hardware prüfbar:** unverändert wie §7 (Windows-Sperren, Gerätenamen,
+`C:`-Wurzel, Credential Manager, cwRsync/MSYS, MSI/NSIS; macOS-Schlüsselbund, notarisiertes DMG,
+echter Updater; Azure/GCS/SMB-Domäne/ProFTPD). Restfenster zwischen Zielprüfung und Ende eines
+Transfers sowie die versteckte Teildatei beim Schließen des Fensters während eines Downloads bleiben.
+Upload-Prüfung listet den Zielordner: Bei Objektspeichern mit Schreib-, aber ohne List-Recht scheitert
+ein Upload jetzt mit dem List-Fehler.
+
+Zusatz zur manuellen Liste: 30. Zwei Dateien gleichen Namens nacheinander einreihen, deren Ziel
+während der Warteschlange entsteht → Rückfrage für jede, keine geht verloren. 31. SFTP/SCP gegen
+Linux-Server mit „a.txt“ und „A.txt“: „a.txt“ in „A.txt“ umbenennen → Fehlermeldung, beide bleiben.

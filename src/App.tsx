@@ -119,6 +119,10 @@ export default function App() {
   // Sequenzieller Abarbeiter: immer genau ein Transfer läuft.
   useEffect(() => {
     if (queue.some((q) => q.status === 'running' || q.status === 'starting')) return;
+    // Offene Ersetzen-Rückfrage: Warteschlange anhalten — sonst könnte ein
+    // weiterer Eintrag mit „existiert bereits“ die Rückfrage verdrängen und
+    // ginge kommentarlos verloren.
+    if (pendingOverwrite) return;
     const next = queue.find((q) => q.status === 'queued');
     if (!next) return;
     setQueue((qs) => qs.map((q) => (q.key === next.key ? { ...q, status: 'starting' } : q)));
@@ -143,7 +147,7 @@ export default function App() {
           qs.map((q) => (q.key === next.key ? { ...q, status: 'error', error: String(err) } : q))
         );
       });
-  }, [queue]);
+  }, [queue, pendingOverwrite]);
 
   const enqueue = (direction: 'download' | 'upload', explicit?: Entry) => {
     if (remoteConn === null) return;

@@ -104,6 +104,20 @@ fn check_local_new_name(path: &str) -> Result<(), String> {
     }
 }
 
+/// Eintrag im Zielordner, der dem neuen Namen (ohne Groß-/Kleinschreibung)
+/// entspricht — außer der Quelle selbst, wenn nur im selben Ordner die
+/// Groß-/Kleinschreibung geändert wird.
+fn rename_conflict<'a>(
+    siblings: &'a [Entry],
+    from_exact: &str,
+    to_lower: &str,
+    same_dir: bool,
+) -> Option<&'a Entry> {
+    siblings
+        .iter()
+        .find(|e| e.name.to_lowercase() == to_lower && !(same_dir && e.name == from_exact))
+}
+
 /// Umbenennen ohne stilles Überschreiben: `rename` ersetzt lokal (und bei
 /// FTP/WebDAV/Objektspeichern oft auch remote) ein vorhandenes Ziel. Der
 /// Vergleich ignoriert Groß-/Kleinschreibung (APFS/NTFS/SMB); reines
@@ -118,17 +132,18 @@ pub(crate) async fn rename_checked(
         check_local_new_name(to)?;
     }
     let to_name = last_component(to, local).to_lowercase();
-    let from_name = last_component(from, local).to_lowercase();
+    let from_exact = last_component(from, local);
     let same_dir = parent_of(from, local) == parent_of(to, local);
-    let case_only = same_dir && from_name == to_name;
-    if !case_only {
-        let siblings = be
-            .list(&parent_of(to, local))
-            .await
-            .map_err(|e| e.to_string())?;
-        if let Some(hit) = siblings.iter().find(|e| e.name.to_lowercase() == to_name) {
-            return Err(format!("„{}“ existiert im Zielordner bereits", hit.name));
-        }
+    let siblings = be
+        .list(&parent_of(to, local))
+        .await
+        .map_err(|e| e.to_string())?;
+    // Der Quell-Eintrag selbst zählt nicht (reines Umschreiben der Groß-/
+    // Kleinschreibung). Auf Servern mit Unterscheidung (Linux) kann neben
+    // „a.txt“ aber ein echtes „A.txt“ liegen — `mv` (SCP/rsync) würde es
+    // sonst still ersetzen.
+    if let Some(hit) = rename_conflict(&siblings, from_exact, &to_name, same_dir) {
+        return Err(format!("„{}“ existiert im Zielordner bereits", hit.name));
     }
     be.rename(from, to).await.map_err(|e| e.to_string())
 }
@@ -200,9 +215,31 @@ mod tests {
 
         // nur Groß-/Kleinschreibung desselben Eintrags ändern ist erlaubt
         rename_checked(&be, true, &p("a.txt"), &p("A.txt")).await.unwrap();
+        // gleicher Name wie die Quelle (keine Änderung) ist kein Konflikt
+        rename_checked(&be, true, &p("A.txt"), &p("A.txt")).await.unwrap();
         // freier Name mit Umlaut und Leerzeichen
         rename_checked(&be, true, &p("A.txt"), &p("Größe neu.txt")).await.unwrap();
         assert!(std::path::Path::new(&p("Größe neu.txt")).exists());
+    }
+
+    #[test]
+    fn case_sensitive_server_twin_is_a_conflict() {
+        let e = |n: &str| Entry {
+            name: n.into(),
+            path: format!("/d/{n}"),
+            kind: fileport_core::EntryKind::File,
+            size: 0,
+            modified: None,
+        };
+        // Linux-Server: „a.txt“ und „A.txt“ nebeneinander — a.txt → A.txt
+        // darf A.txt nicht ersetzen (mv/rename würde es still tun).
+        let both = [e("a.txt"), e("A.txt")];
+        assert_eq!(rename_conflict(&both, "a.txt", "a.txt", true).map(|h| h.name.as_str()), Some("A.txt"));
+        // nur die Quelle vorhanden → reines Umschreiben erlaubt
+        let one = [e("a.txt")];
+        assert!(rename_conflict(&one, "a.txt", "a.txt", true).is_none());
+        // anderer Ordner: gleichnamiger Eintrag ist immer ein Konflikt
+        assert!(rename_conflict(&one, "a.txt", "a.txt", false).is_some());
     }
 
     #[test]

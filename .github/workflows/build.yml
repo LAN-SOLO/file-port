@@ -70,6 +70,9 @@ jobs:
       - name: Run tests
         run: cargo test --workspace
 
+      - name: Run frontend tests
+        run: pnpm test
+
       # Das AppImage-Bundling lädt linuxdeploy & Co. anonym von GitHub und
       # läuft auf Shared-Runnern gern in 429-Rate-Limits: Tooling cachen
       # und den Build bei Fehlschlag mit Wartezeit wiederholen.

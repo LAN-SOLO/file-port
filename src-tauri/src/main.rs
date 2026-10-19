@@ -49,15 +49,29 @@ async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
         .download_and_install(|_, _| {}, || {})
         .await
         .map_err(|e| format!("Update fehlgeschlagen: {e}"))?;
+    // Der Neustart beendet laufende Downloads hart — Teildateien vorher abräumen.
+    use tauri::Manager;
+    app.state::<transfers::Transfers>().shutdown();
     app.restart();
 }
 
 fn main() {
-    tauri::Builder::default()
+    use tauri::Manager;
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .manage(engine::Engine::new())
         .manage(transfers::Transfers::default())
+        .setup(|app| {
+            // Journal der Teildateien laufender Downloads; Reste eines früheren
+            // Laufs (Fenster mitten im Download geschlossen, Absturz) verschwinden hier.
+            if let Ok(dir) = app.path().app_config_dir() {
+                let _ = std::fs::create_dir_all(&dir);
+                app.state::<transfers::Transfers>()
+                    .init_journal(dir.join("pending-parts.txt"));
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             check_update,
             install_update,
@@ -75,6 +89,13 @@ fn main() {
             transfers::transfer_start,
             transfers::transfer_cancel,
         ])
-        .run(tauri::generate_context!())
+        .build(tauri::generate_context!())
         .expect("error while running fileport");
+    app.run(|handle, event| {
+        // Letztes Fenster geschlossen → App endet: laufende Downloads abbrechen
+        // und ihre versteckten Teildateien entfernen.
+        if let tauri::RunEvent::Exit = event {
+            handle.state::<transfers::Transfers>().shutdown();
+        }
+    });
 }

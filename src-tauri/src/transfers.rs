@@ -26,6 +26,101 @@ pub struct Transfers {
     /// registriert hat (beide Commands laufen nebenläufig) — sonst ginge
     /// ein früher Klick auf „Abbrechen" verloren.
     early_cancel: Mutex<HashSet<u32>>,
+    /// Teildateien laufender Downloads (Transfer-ID → Pfad), gespiegelt in
+    /// einer Journal-Datei. Wird das Fenster mitten im Download geschlossen
+    /// (oder stürzt die App ab), räumt das Beenden bzw. der nächste Start
+    /// die versteckte `.name.fileport-part` weg.
+    parts: Arc<StdMutex<PartJournal>>,
+}
+
+/// Teildateien laufender Downloads plus Journal-Datei (eine Zeile je Pfad).
+#[derive(Default)]
+pub(crate) struct PartJournal {
+    file: Option<PathBuf>,
+    parts: HashMap<u32, PathBuf>,
+}
+
+impl PartJournal {
+    fn write(&self) {
+        let Some(file) = &self.file else { return };
+        if self.parts.is_empty() {
+            let _ = std::fs::remove_file(file);
+            return;
+        }
+        let body: String = self
+            .parts
+            .values()
+            .filter_map(|p| p.to_str())
+            .map(|p| format!("{p}\n"))
+            .collect();
+        let _ = std::fs::write(file, body);
+    }
+
+    fn add(&mut self, id: u32, part: PathBuf) {
+        self.parts.insert(id, part);
+        self.write();
+    }
+
+    fn remove(&mut self, id: u32) {
+        if self.parts.remove(&id).is_some() {
+            self.write();
+        }
+    }
+}
+
+/// Nur Dateien löschen, die nach einer fileport-Teildatei aussehen — das
+/// Journal ist eine einfache Textdatei, ein verirrter Eintrag darf nie eine
+/// fremde Datei treffen.
+fn is_part_file(path: &Path) -> bool {
+    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    path.is_absolute()
+        && name.starts_with('.')
+        && name.ends_with(".fileport-part")
+        && std::fs::symlink_metadata(path).is_ok_and(|m| m.is_file())
+}
+
+/// Start der App: Teildateien aus einem früheren Lauf (Fenster während eines
+/// Downloads geschlossen, Absturz, Update-Neustart) entfernen.
+pub(crate) fn cleanup_journal(file: &Path) -> usize {
+    let Ok(raw) = std::fs::read_to_string(file) else {
+        return 0;
+    };
+    let mut removed = 0;
+    for line in raw.lines().map(str::trim).filter(|l| !l.is_empty()) {
+        let path = Path::new(line);
+        if is_part_file(path) && std::fs::remove_file(path).is_ok() {
+            removed += 1;
+        }
+    }
+    let _ = std::fs::remove_file(file);
+    removed
+}
+
+impl Transfers {
+    /// Journal-Datei setzen und Reste eines früheren Laufs abräumen.
+    pub(crate) fn init_journal(&self, file: PathBuf) {
+        cleanup_journal(&file);
+        self.parts.lock().unwrap().file = Some(file);
+    }
+
+    /// Beim Beenden der App (Fenster geschlossen, Update-Neustart): laufende
+    /// Transfers abbrechen und ihre Teildateien sofort entfernen — die Tasks
+    /// selbst kommen dazu nicht mehr.
+    pub(crate) fn shutdown(&self) {
+        if let Ok(active) = self.active.try_lock() {
+            for token in active.values() {
+                token.cancel();
+            }
+        }
+        let mut journal = self.parts.lock().unwrap();
+        for part in journal.parts.values() {
+            if is_part_file(part) {
+                let _ = std::fs::remove_file(part);
+            }
+        }
+        journal.parts.clear();
+        journal.write();
+    }
 }
 
 /// Prüft den lokalen Zielpfad eines Downloads. Der Dateiname stammt vom
@@ -151,16 +246,21 @@ pub(crate) fn download_target(dir: &str, name: &str) -> Result<PathBuf, String> 
 
 /// Name eines vorhandenen Eintrags auf der Gegenstelle, der denselben Namen
 /// wie `remote` trägt — ohne Groß-/Kleinschreibung (SMB, NAS, S3-Gateways
-/// auf Windows). `None`, wenn der Name frei ist.
+/// auf Windows). `None`, wenn der Name frei ist — oder wenn der Zielordner
+/// sich nicht listen lässt (nur Schreibrecht: Objektspeicher mit reiner
+/// Put-Policy, SFTP-„Briefkasten“-Ordner). Dann lädt fileport ohne diese
+/// Prüfung hoch; der Upload selbst meldet echte Fehler.
 pub(crate) async fn remote_existing(
     backend: &dyn fileport_core::Backend,
     remote: &str,
 ) -> Result<Option<String>, String> {
+    use fileport_core::FpError;
     let name = fileport_core::rfile_name(remote).to_lowercase();
-    let siblings = backend
-        .list(&fileport_core::rparent(remote))
-        .await
-        .map_err(|e| e.to_string())?;
+    let siblings = match backend.list(&fileport_core::rparent(remote)).await {
+        Ok(list) => list,
+        Err(FpError::Denied(_) | FpError::Auth(_) | FpError::NotFound(_)) => return Ok(None),
+        Err(e) => return Err(e.to_string()),
+    };
     Ok(siblings
         .into_iter()
         .find(|e| e.name.to_lowercase() == name)
@@ -245,10 +345,12 @@ pub async fn transfer_start(
 
     let app = app.clone();
     let transfers_map = transfers.active.clone();
+    let journal = transfers.parts.clone();
     tauri::async_runtime::spawn(async move {
         let result = match direction {
             Direction::Download => {
                 let part = part_path(&local_path);
+                journal.lock().unwrap().add(id, part.clone());
                 let r = backend.download(&remote, &part, &ctl).await;
                 match r {
                     // Mit Wiederholung: unter Windows hält oft ein Virenscanner
@@ -270,6 +372,7 @@ pub async fn transfer_start(
             }
             Direction::Upload => backend.upload(&local_path, &remote, &ctl).await,
         };
+        journal.lock().unwrap().remove(id);
         transfers_map.lock().await.remove(&id);
         let event = match result {
             Ok(r) => DoneEvent {
@@ -389,6 +492,71 @@ mod tests {
         let hit = remote_existing(&be, &format!("{base}/report.PDF")).await.unwrap();
         assert_eq!(hit.as_deref(), Some("Report.pdf"));
         assert!(remote_existing(&be, &format!("{base}/frei ä.pdf")).await.unwrap().is_none());
+    }
+
+    #[test]
+    fn journal_cleans_only_leftover_part_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let journal_file = dir.path().join("pending-parts.txt");
+        let target = dir.path().join("Bericht.pdf");
+        let part = part_path(&target);
+        std::fs::write(&part, b"halb").unwrap();
+        std::fs::write(&target, b"alt").unwrap();
+        let foreign = dir.path().join("wichtig.txt");
+        std::fs::write(&foreign, b"x").unwrap();
+
+        // Laufender Download: Journal enthält die Teildatei, Ende entfernt sie
+        let mut j = PartJournal { file: Some(journal_file.clone()), parts: HashMap::new() };
+        j.add(7, part.clone());
+        assert!(std::fs::read_to_string(&journal_file).unwrap().contains(".Bericht.pdf.fileport-part"));
+        j.remove(7);
+        assert!(!journal_file.exists(), "leeres Journal wird gelöscht");
+
+        // Abbruch durch Fenster-Schließen/Absturz: nächster Start räumt auf —
+        // aber nie eine fremde Datei, auch wenn sie im Journal steht.
+        j.add(8, part.clone());
+        let mut raw = std::fs::read_to_string(&journal_file).unwrap();
+        raw.push_str(&format!("{}\n{}\n", foreign.display(), target.display()));
+        std::fs::write(&journal_file, raw).unwrap();
+        assert_eq!(cleanup_journal(&journal_file), 1);
+        assert!(!part.exists());
+        assert!(foreign.exists() && target.exists());
+        assert!(!journal_file.exists());
+        assert_eq!(cleanup_journal(&journal_file), 0);
+    }
+
+    #[test]
+    fn shutdown_removes_running_part_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let part = part_path(&dir.path().join("gross.iso"));
+        std::fs::write(&part, b"halb").unwrap();
+        let t = Transfers::default();
+        t.init_journal(dir.path().join("pending-parts.txt"));
+        t.parts.lock().unwrap().add(1, part.clone());
+        t.shutdown();
+        assert!(!part.exists());
+        assert!(!dir.path().join("pending-parts.txt").exists());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn upload_precheck_tolerates_unlistable_target() {
+        // Ordner nur mit Schreibrecht (Put-only-Policy, SFTP-Briefkasten):
+        // kein Listing möglich → Upload ohne Vorprüfung statt Abbruch.
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let inbox = dir.path().join("inbox");
+        std::fs::create_dir(&inbox).unwrap();
+        std::fs::set_permissions(&inbox, std::fs::Permissions::from_mode(0o300)).unwrap();
+        let be = fileport_core::LocalBackend;
+        let listing = fileport_core::Backend::list(&be, &inbox.to_string_lossy()).await;
+        let r = remote_existing(&be, &format!("{}/a.txt", inbox.display())).await;
+        std::fs::set_permissions(&inbox, std::fs::Permissions::from_mode(0o700)).unwrap();
+        if listing.is_ok() {
+            return; // als root lässt sich alles listen — Test nicht aussagekräftig
+        }
+        assert!(matches!(listing, Err(fileport_core::FpError::Denied(_))));
+        assert!(r.unwrap().is_none());
     }
 
     #[test]

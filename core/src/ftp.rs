@@ -1,6 +1,7 @@
 use std::io::{Read, Write};
 use std::path::Path;
 use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, UNIX_EPOCH};
 
@@ -49,6 +50,83 @@ pub struct FtpConfig {
 pub struct FtpBackend {
     conn: tokio::sync::Mutex<Option<RustlsFtpStream>>,
     label: String,
+    /// Listing-Art: unbekannt / MLSD (RFC 3659, Zeiten in UTC) / nur LIST.
+    listing: Arc<AtomicU8>,
+}
+
+const LISTING_UNKNOWN: u8 = 0;
+const LISTING_MLSD: u8 = 1;
+const LISTING_LIST: u8 = 2;
+
+/// Antwortcodes für „Befehl unbekannt/nicht implementiert".
+fn is_unsupported(e: &suppaftp::FtpError) -> bool {
+    matches!(e, suppaftp::FtpError::UnexpectedResponse(r) if matches!(r.status as u32, 500 | 501 | 502 | 504))
+}
+
+/// Eine MLSD-Zeile (RFC 3659): `fakt=wert;fakt=wert; name`. Zeiten
+/// (`modify`) sind dort per Definition UTC — anders als bei LIST, das
+/// gar keine Zeitzone kennt. Eigener Parser statt suppaftps: der verwirft
+/// Zeilen mit Sekundenbruchteilen (`modify=20260101120000.123`) oder
+/// unbekanntem Typ (`OS.unix=slink:…`) und kürzt Namen mit `;`.
+fn parse_mlsd_line(dir: &str, line: &str) -> Option<Entry> {
+    let line = line.trim_end_matches(['\r', '\n']);
+    let (facts, name) = line.split_once(' ')?;
+    if name.is_empty() || name == "." || name == ".." || name.contains('/') {
+        return None;
+    }
+    let mut kind = EntryKind::File;
+    let mut size = 0u64;
+    let mut modified = None;
+    for fact in facts.split(';').filter(|f| !f.is_empty()) {
+        let Some((k, v)) = fact.split_once('=') else { continue };
+        match k.to_ascii_lowercase().as_str() {
+            "type" => {
+                let v = v.to_ascii_lowercase();
+                kind = match v.as_str() {
+                    // aktueller/übergeordneter Ordner: nicht anzeigen
+                    "cdir" | "pdir" => return None,
+                    "dir" => EntryKind::Dir,
+                    "file" => EntryKind::File,
+                    _ if v.contains("link") => EntryKind::Symlink,
+                    _ => EntryKind::File,
+                };
+            }
+            "size" => size = v.parse().unwrap_or(0),
+            "modify" => {
+                let digits = v.split('.').next().unwrap_or("");
+                modified = chrono_free_utc(digits);
+            }
+            _ => {}
+        }
+    }
+    Some(Entry {
+        path: rpath::join(dir, name),
+        name: name.to_string(),
+        kind,
+        size,
+        modified,
+    })
+}
+
+/// `YYYYMMDDHHMMSS` (UTC) → Unix-Sekunden, ohne Datums-Crate.
+fn chrono_free_utc(s: &str) -> Option<i64> {
+    if s.len() != 14 || !s.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let n = |a: usize, b: usize| s[a..b].parse::<i64>().ok();
+    let (y, mo, d) = (n(0, 4)?, n(4, 6)?, n(6, 8)?);
+    let (h, mi, se) = (n(8, 10)?, n(10, 12)?, n(12, 14)?);
+    if !(1..=12).contains(&mo) || !(1..=31).contains(&d) || h > 23 || mi > 59 || se > 60 {
+        return None;
+    }
+    // Tage seit 1970-01-01 (Algorithmus nach Howard Hinnant, proleptisch gregorianisch)
+    let (y, m) = if mo <= 2 { (y - 1, mo + 9) } else { (y, mo - 3) };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let doy = (153 * m + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146_097 + doe - 719_468;
+    Some(days * 86_400 + h * 3600 + mi * 60 + se)
 }
 
 /// Bewusst unsicherer Verifier für „selbstsignierte Zertifikate
@@ -219,6 +297,7 @@ impl FtpBackend {
         Ok(FtpBackend {
             conn: tokio::sync::Mutex::new(Some(stream)),
             label,
+            listing: Arc::new(AtomicU8::new(LISTING_UNKNOWN)),
         })
     }
 
@@ -287,7 +366,23 @@ impl Backend for FtpBackend {
 
     async fn list(&self, path: &str) -> Result<Vec<Entry>, FpError> {
         let dir = path.to_string();
+        let listing = self.listing.clone();
         self.with_conn(move |c| {
+            // MLSD liefert Zeiten in UTC (RFC 3659); LIST hat keine Zeitzone.
+            // Ob der Server MLSD kann, zeigt einmalig MLST über die Steuer-
+            // verbindung — ein abgelehntes MLSD selbst ließe den schon
+            // geöffneten TLS-Datenkanal bis zum Zeitlimit hängen.
+            if listing.load(Ordering::Relaxed) == LISTING_UNKNOWN {
+                match c.mlst(Some(&dir)) {
+                    Ok(_) => listing.store(LISTING_MLSD, Ordering::Relaxed),
+                    Err(e) if is_unsupported(&e) => listing.store(LISTING_LIST, Ordering::Relaxed),
+                    Err(_) => {} // z. B. 550 für diesen Pfad — beim nächsten Listing erneut prüfen
+                }
+            }
+            if listing.load(Ordering::Relaxed) == LISTING_MLSD {
+                let lines = c.mlsd(Some(&dir)).map_err(|e| map_ftp(&dir, e))?;
+                return Ok(lines.iter().filter_map(|l| parse_mlsd_line(&dir, l)).collect());
+            }
             let lines = c.list(Some(&dir)).map_err(|e| map_ftp(&dir, e))?;
             let mut out = Vec::new();
             for line in lines {
@@ -394,5 +489,45 @@ impl Backend for FtpBackend {
         let from = from.to_string();
         let to = to.to_string();
         self.with_conn(move |c| c.rename(&from, &to).map_err(|e| map_ftp(&from, e))).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn utc_conversion() {
+        assert_eq!(chrono_free_utc("19700101000000"), Some(0));
+        assert_eq!(chrono_free_utc("20000229120000"), Some(951_825_600));
+        assert_eq!(chrono_free_utc("20261020013000"), Some(1_792_459_800));
+        assert_eq!(chrono_free_utc("2026102001300"), None);
+        assert_eq!(chrono_free_utc("20261320013000"), None);
+    }
+
+    #[test]
+    fn mlsd_lines_from_real_servers() {
+        // ProFTPD
+        let e = parse_mlsd_line("/home", "modify=20261020013000;perm=adfrw;size=1234;type=file;unique=FD00U1;UNIX.group=1000;UNIX.mode=0644;UNIX.owner=1000; Bericht 2026; final.pdf").unwrap();
+        assert_eq!(e.name, "Bericht 2026; final.pdf");
+        assert_eq!(e.path, "/home/Bericht 2026; final.pdf");
+        assert_eq!(e.kind, EntryKind::File);
+        assert_eq!(e.size, 1234);
+        assert_eq!(e.modified, Some(1_792_459_800));
+        // FileZilla Server, Sekundenbruchteile
+        let e = parse_mlsd_line("/", "type=dir;modify=20261020013000.123;perm=flcdmpe; Ordner mit  zwei Leerzeichen").unwrap();
+        assert_eq!(e.kind, EntryKind::Dir);
+        assert_eq!(e.name, "Ordner mit  zwei Leerzeichen");
+        assert_eq!(e.modified, Some(1_792_459_800));
+        // Symlink (ProFTPD: OS.unix=slink:<ziel>)
+        let e = parse_mlsd_line("/", "type=OS.unix=slink:/srv/x;modify=20261020013000; link").unwrap();
+        assert_eq!(e.kind, EntryKind::Symlink);
+        // cdir/pdir und kaputte Zeilen werden ausgeblendet
+        assert!(parse_mlsd_line("/", "type=cdir;modify=20261020013000; /home").is_none());
+        assert!(parse_mlsd_line("/", "type=pdir;modify=20261020013000; ..").is_none());
+        assert!(parse_mlsd_line("/", "kaputt").is_none());
+        // Gemischte Groß-/Kleinschreibung der Fakten, CRLF
+        let e = parse_mlsd_line("/", "Type=File;Size=5;Modify=20261020013000; a.txt\r\n").unwrap();
+        assert_eq!((e.name.as_str(), e.size), ("a.txt", 5));
     }
 }

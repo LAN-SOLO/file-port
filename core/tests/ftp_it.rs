@@ -15,6 +15,11 @@
 //! FILEPORT_IT=1 cargo test -p fileport-core --test ftp_it
 //! docker stop fileport-ftps
 //! ```
+//!
+//! vsftpd kennt kein MLSD (fileport fällt auf LIST zurück). Den MLSD-Pfad
+//! (ProFTPD/FileZilla Server/Pure-FTPd) prüft derselbe Test gegen
+//! pyftpdlib mit TLS auf Port 2121 (`TLS_FTPHandler`, Benutzer foo/pass,
+//! passive Ports 21000–21010, `tls_control_required`/`tls_data_required`).
 
 use fileport_core::{Backend, FtpBackend, FtpConfig, FtpSecurity, TransferCtl};
 
@@ -56,6 +61,14 @@ async fn ftps_roundtrip_against_real_server() {
     assert_eq!(listing.len(), 1);
     assert_eq!(listing[0].name, "file.bin");
     assert_eq!(listing[0].size, data.len() as u64);
+    // Änderungszeit: vsftpd per LIST (UTC-Annahme), Server mit MLSD per UTC-Fakt —
+    // beides muss nahe „jetzt“ liegen, nicht um den Zeitzonen-Versatz verschoben.
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    let mtime = listing[0].modified.expect("Änderungszeit fehlt");
+    assert!((mtime - now).abs() < 600, "mtime {mtime} vs. jetzt {now}");
 
     let dst = dir.path().join("dst.bin");
     let down = be

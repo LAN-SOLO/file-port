@@ -153,6 +153,9 @@ export default function App() {
     if (remoteConn === null) return;
     const src = explicit ?? (direction === 'upload' ? localSel.entry : remoteSel.entry);
     if (!src || src.kind === 'dir') return;
+    // Zielordner nie geladen (Listing scheiterte, z. B. nur Schreibrecht):
+    // sonst landete der Upload mit leerem Pfad in der Server-Wurzel „/“.
+    if ((direction === 'upload' ? remoteSel.dir : localSel.dir) === '') return;
     // Server-Namen (z. B. „a\\b“, „CON.txt“, „a:b“) prüft das Backend
     // plattformgerecht — unzulässige Namen enden als Fehler in der Warteschlange.
     const targetName = src.name.toLowerCase();
@@ -212,8 +215,10 @@ export default function App() {
     }
   };
 
-  const canUpload = remoteConn !== null && !!localSel.entry && localSel.entry.kind !== 'dir';
-  const canDownload = remoteConn !== null && !!remoteSel.entry && remoteSel.entry.kind !== 'dir';
+  const canUpload =
+    remoteConn !== null && !!localSel.entry && localSel.entry.kind !== 'dir' && remoteSel.dir !== '';
+  const canDownload =
+    remoteConn !== null && !!remoteSel.entry && remoteSel.entry.kind !== 'dir' && localSel.dir !== '';
 
   return (
     <div className="app">

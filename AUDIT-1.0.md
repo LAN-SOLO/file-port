@@ -498,3 +498,36 @@ und `StrictHostKeyChecking=yes`; Ersetzen-Wiederholung unter Windows bis ~3 s
 **Nur auf echter Hardware prüfbar:** unverändert §5/§7/§8 und §9 Punkte 32–35 (Fenster schließen/
 Cmd+Q/Alt+F4/Update-Neustart während eines Downloads, `kill -9` + Neustart, ProFTPD/FileZilla
 Server mit MLSD, Home ohne Leserecht), dazu: SFTP-Konto mit unlesbarem Home → „Neuer Ordner“ gesperrt.
+
+## 11. Runde 4 – Regressionen (platform) (2026-10-20)
+
+Prüfung von `7369410..095dfba` auf Nebenläufigkeit, Plattform und Lebenszyklus (Exit-/Updater-Hooks,
+Sperren, Windows-Zweige, Pfade, Handbuch DE/EN).
+
+**Gefunden und behoben**
+
+1. *Zweite Instanz löschte die Teildatei eines laufenden Downloads* (Regression aus §9 Punkt 1): Das
+   Journal `pending-parts.txt` war eine Datei für alle Instanzen, und jeder Start räumte es
+   bedingungslos ab. Läuft in Instanz A ein Download und startet Instanz B (unter Windows/Linux
+   startet jeder Doppelklick eine neue Instanz; ein Single-Instance-Plugin gibt es nicht), löschte B
+   A's `.name.fileport-part` — A's Download scheiterte beim abschließenden Umbenennen; zudem
+   überschrieben sich die Journale gegenseitig. Jetzt führt jede Instanz `pending-parts-<pid>.txt`
+   und hält eine Dateisperre (`File::try_lock`, std) auf `pending-parts-<pid>.lock`; der Start räumt
+   nur Journale ab, deren Sperre frei ist (Prozess beendet/abgestürzt). Das alte gemeinsame Journal
+   früherer Testbuilds wird weiter abgeräumt. Unit-Test `second_instance_keeps_running_part_files`
+   (vorher rot: Teildatei weg), deckt auch den Absturzfall ab.
+
+**Geprüft ohne Befund:** `shutdown()` blockiert den Main-Thread nicht (`try_lock` auf die
+tokio-Mutex, Journal-Mutex nie über `await` gehalten), läuft beim Update-Neustart und danach bei
+`RunEvent::Exit` idempotent; `is_part_file` schützt Zieldateien beim Wettlauf Umbenennen ↔ Beenden;
+MLST/MLSD-Zustand pro Verbindung (`AtomicU8`) ohne Sperre über langsame IO hinaus; neue Pfeil-/
+„Neuer Ordner“-Sperre trifft keine Gegenstelle im Normalfall (alle `initial_dir` liefern einen
+nicht leeren Pfad, Objektspeicher/WebDAV/SMB `/`); Handbuch-Texte DE/EN deckungsgleich und mit
+dem Fix weiter zutreffend.
+
+**Läufe:** `cargo test --workspace` grün (17 app-Unit-Tests, 17 core), `cargo clippy --workspace
+--all-targets` 0 Warnungen, Windows-Clippy (`x86_64-pc-windows-msvc`, Rezept §7) grün — nur
+Typprüfung. `pnpm test` grün, `pnpm build` ok.
+
+**Nur auf echter Hardware prüfbar:** Windows — Download in Instanz A, zweite Instanz starten →
+Download in A läuft fertig; A per Taskmanager beenden, neu starten → Teildatei weg.

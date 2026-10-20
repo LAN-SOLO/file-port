@@ -67,8 +67,7 @@ fn main() {
             // Laufs (Fenster mitten im Download geschlossen, Absturz) verschwinden hier.
             if let Ok(dir) = app.path().app_config_dir() {
                 let _ = std::fs::create_dir_all(&dir);
-                app.state::<transfers::Transfers>()
-                    .init_journal(dir.join("pending-parts.txt"));
+                app.state::<transfers::Transfers>().init_journal(&dir);
             }
             Ok(())
         })

@@ -38,6 +38,10 @@ pub struct Transfers {
 pub(crate) struct PartJournal {
     file: Option<PathBuf>,
     parts: HashMap<u32, PathBuf>,
+    /// Gesperrte `pending-parts-<pid>.lock` dieser Instanz, solange sie läuft —
+    /// eine zweite gleichzeitig gestartete Instanz erkennt daran, dass das
+    /// Journal noch lebt, und lässt dessen Teildateien in Ruhe.
+    lock: Option<std::fs::File>,
 }
 
 impl PartJournal {
@@ -97,10 +101,50 @@ pub(crate) fn cleanup_journal(file: &Path) -> usize {
 }
 
 impl Transfers {
-    /// Journal-Datei setzen und Reste eines früheren Laufs abräumen.
-    pub(crate) fn init_journal(&self, file: PathBuf) {
-        cleanup_journal(&file);
-        self.parts.lock().unwrap().file = Some(file);
+    /// Journal dieser Instanz im Ordner `dir` anlegen und Reste früherer,
+    /// beendeter Läufe abräumen. Jede Instanz führt ein eigenes Journal
+    /// (`pending-parts-<pid>.txt`) und hält dazu eine Dateisperre auf
+    /// `pending-parts-<pid>.lock`; aufgeräumt wird nur, wessen Sperre frei ist
+    /// (Prozess beendet oder abgestürzt). Sonst löschte ein zweites Fenster
+    /// (unter Windows ein zweiter Start) die Teildatei eines laufenden
+    /// Downloads der ersten Instanz.
+    pub(crate) fn init_journal(&self, dir: &Path) {
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let name = entry.file_name();
+                let Some(id) = name
+                    .to_str()
+                    .and_then(|n| n.strip_prefix("pending-parts-"))
+                    .and_then(|n| n.strip_suffix(".lock"))
+                else {
+                    continue;
+                };
+                let Ok(lock) = std::fs::OpenOptions::new().read(true).write(true).open(entry.path())
+                else {
+                    continue;
+                };
+                if lock.try_lock().is_ok() {
+                    cleanup_journal(&dir.join(format!("pending-parts-{id}.txt")));
+                    drop(lock);
+                    let _ = std::fs::remove_file(entry.path());
+                }
+            }
+        }
+        // Journal älterer Testbuilds (ohne Sperre, eine Datei für alle).
+        cleanup_journal(&dir.join("pending-parts.txt"));
+
+        let pid = std::process::id();
+        let lock = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(dir.join(format!("pending-parts-{pid}.lock")))
+            .ok()
+            .filter(|f| f.try_lock().is_ok());
+        let mut journal = self.parts.lock().unwrap();
+        journal.lock = lock;
+        journal.file = Some(dir.join(format!("pending-parts-{pid}.txt")));
     }
 
     /// Beim Beenden der App (Fenster geschlossen, Update-Neustart): laufende
@@ -506,7 +550,7 @@ mod tests {
         std::fs::write(&foreign, b"x").unwrap();
 
         // Laufender Download: Journal enthält die Teildatei, Ende entfernt sie
-        let mut j = PartJournal { file: Some(journal_file.clone()), parts: HashMap::new() };
+        let mut j = PartJournal { file: Some(journal_file.clone()), ..Default::default() };
         j.add(7, part.clone());
         assert!(std::fs::read_to_string(&journal_file).unwrap().contains(".Bericht.pdf.fileport-part"));
         j.remove(7);
@@ -531,11 +575,36 @@ mod tests {
         let part = part_path(&dir.path().join("gross.iso"));
         std::fs::write(&part, b"halb").unwrap();
         let t = Transfers::default();
-        t.init_journal(dir.path().join("pending-parts.txt"));
+        t.init_journal(dir.path());
         t.parts.lock().unwrap().add(1, part.clone());
         t.shutdown();
         assert!(!part.exists());
-        assert!(!dir.path().join("pending-parts.txt").exists());
+        let pid = std::process::id();
+        assert!(!dir.path().join(format!("pending-parts-{pid}.txt")).exists());
+    }
+
+    #[test]
+    fn second_instance_keeps_running_part_files() {
+        // Instanz A lädt gerade herunter, Instanz B startet: B darf A's
+        // Teildatei nicht löschen (A hält die Sperre ihres Journals).
+        let dir = tempfile::tempdir().unwrap();
+        let part = part_path(&dir.path().join("gross.iso"));
+        std::fs::write(&part, b"halb").unwrap();
+        let a = Transfers::default();
+        a.init_journal(dir.path());
+        a.parts.lock().unwrap().add(1, part.clone());
+        let b = Transfers::default();
+        b.init_journal(dir.path());
+        assert!(part.exists(), "zweite Instanz löscht laufende Teildatei");
+
+        // A stürzt ab (Sperre frei, Journal bleibt) → nächster Start räumt auf.
+        let mut ja = a.parts.lock().unwrap();
+        ja.lock = None;
+        ja.file = None; // Journal-Datei nicht mehr anfassen, wie nach kill -9
+        drop(ja);
+        let c = Transfers::default();
+        c.init_journal(dir.path());
+        assert!(!part.exists(), "Rest einer beendeten Instanz bleibt liegen");
     }
 
     #[cfg(unix)]

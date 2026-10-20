@@ -260,7 +260,9 @@ mod tests {
         assert!(check_local_new_name(&ok).is_ok());
         if cfg!(windows) {
             for bad in ["a:b", "CON", "x?", "ende."] {
-                let p = base.join(bad).to_string_lossy().into_owned();
+                // nicht `base.join(bad)`: unter Windows gilt "a:b" als laufwerksrelativer
+                // Pfad und ersetzt die Basis komplett (file_name wäre dann "b")
+                let p = format!("{}\\{bad}", base.to_string_lossy().trim_end_matches('\\'));
                 assert!(check_local_new_name(&p).is_err(), "{bad}");
             }
         }

@@ -126,10 +126,16 @@ Theme und Tutorial-Flag.
   auf der zuletzt geladenen Ansicht; seit Runde 2 prüft das Backend unmittelbar vor dem Start erneut
   und meldet ein inzwischen entstandenes Ziel (die UI fragt dann nach) — Restfenster: Datei entsteht
   zwischen Prüfung und Abschluss des Transfers.
-- FTPS-Änderungszeiten: LIST liefert keine Zeitzone, fileport nimmt UTC an (vsftpd/ProFTPD-Standard).
-  Server mit `use_localtime=YES` o. Ä. zeigen um den Zeitzonen-Versatz verschobene Zeiten.
-- Schließen des Fensters während eines Downloads beendet den Transfer hart; eine versteckte
-  `.name.fileport-part` kann liegen bleiben (wird beim nächsten Download derselben Datei überschrieben).
+- FTPS-Änderungszeiten: Seit Runde 3 per MLSD (UTC), wenn der Server MLST/MLSD kann (ProFTPD,
+  FileZilla Server, Pure-FTPd). Ohne MLSD (vsftpd) bleibt LIST ohne Zeitzone, fileport nimmt UTC an —
+  Server, die per LIST Ortszeit senden *und* kein MLSD können, zeigen verschobene Zeiten.
+- ~~Schließen des Fensters während eines Downloads hinterlässt `.name.fileport-part`~~ — seit Runde 3
+  behoben (Journal + Aufräumen beim Beenden und beim nächsten Start). Rest: läuft ein **zweites**
+  fileport-Fenster/-Prozess gleichzeitig, kann dessen Start die Teildatei eines laufenden Downloads
+  der ersten Instanz entfernen — der Download scheitert dann mit Fehler, Ziel bleibt unversehrt.
+- Ordner ohne List-Recht (nur Schreibrecht: SFTP-Briefkasten, S3/Azure/GCS mit reiner Put-Policy)
+  lassen sich nicht öffnen und daher nicht als Upload-Ziel wählen; Objektspeicher verlangen schon beim
+  Verbinden List-Recht auf die Bucket-Wurzel (sofortige Prüfung der Zugangsdaten).
 
 ## 5. Manuelle Testliste (echte App)
 
@@ -341,3 +347,112 @@ ein Upload jetzt mit dem List-Fehler.
 Zusatz zur manuellen Liste: 30. Zwei Dateien gleichen Namens nacheinander einreihen, deren Ziel
 während der Warteschlange entsteht → Rückfrage für jede, keine geht verloren. 31. SFTP/SCP gegen
 Linux-Server mit „a.txt“ und „A.txt“: „a.txt“ in „A.txt“ umbenennen → Fehlermeldung, beide bleiben.
+
+## 9. Runde 3 (2026-10-20, final)
+
+Basis `7369410`. Ziel: jede Aussage aus Handbuch (DE/EN), README und UI-Texten gegen den Code prüfen,
+Nutzerreisen inkl. Fehlerfällen durchspielen, Reste aus §8 beheben. Version bleibt 1.0.0.
+
+**Behoben (Code)**
+
+1. *Liegengebliebene Teildatei beim Schließen/Neustart (Rest §4/§8):* Downloads tragen ihre
+   `.name.fileport-part` in ein Journal ein (`pending-parts.txt` im Konfigordner neben
+   `profiles.json`). `RunEvent::Exit` (letztes Fenster zu, Cmd+Q) und der Update-Neustart brechen
+   laufende Transfers ab und löschen deren Teildateien sofort; nach Absturz/Kill räumt der nächste
+   Start anhand des Journals auf. Gelöscht wird nur, was wie eine fileport-Teildatei aussieht
+   (absoluter Pfad, `.`-Präfix, Endung `.fileport-part`, reguläre Datei) — Unit-Tests
+   `journal_cleans_only_leftover_part_files`, `shutdown_removes_running_part_files`.
+2. *Upload-Vorprüfung ohne List-Recht (Regression aus Runde 2):* `remote_existing` wertet
+   „Zugriff verweigert“, „Zugriff abgelehnt“ (Objektspeicher 401/403) und „Nicht gefunden“ (FTP 550)
+   beim Listen des Zielordners als „nicht prüfbar“ und lässt den Upload starten; andere Fehler
+   (Verbindung weg) brechen weiter ab. Unit-Test mit Ordner `0o300` (nur Schreib-/Suchrecht).
+   Hinweis: In der Oberfläche ist ein solcher Ordner nicht öffenbar (siehe §4) — der Fix greift für
+   Ordner, deren Leserecht sich zwischen Anzeige und Upload ändert, und für FTP-Server, die auf LIST
+   eines leeren Ordners 550 antworten.
+3. *FTPS-Zeiten (Rest §4):* Einmal pro Verbindung `MLST` auf der Steuerverbindung; antwortet der
+   Server, holt fileport zusätzlich zu LIST ein `MLSD` und übernimmt daraus nur die UTC-Zeiten.
+   Art und Größe bleiben aus LIST (manche Server melden Ordner-Symlinks in MLSD als `type=dir` —
+   rekursives Löschen liefe sonst ins Link-Ziel). MLSD wird nie „auf Verdacht“ geschickt: suppaftp
+   baut vor der Antwort den TLS-Datenkanal auf, ein abgelehntes MLSD hinge 120 s. `FEAT` scheidet aus
+   (suppaftp 10 wartet bei einzeiliger `211`-Antwort auf weitere Zeilen). Eigener MLSD-Parser
+   (Sekundenbruchteile, `;` im Namen, `OS.unix=slink`). Unit-Tests + IT (siehe unten).
+4. *Upload in die Server-Wurzel (neu gefunden):* Scheiterte das erste Listing der Gegenstelle (z. B.
+   Home ohne Leserecht), war der Zielordner `''` — `joinPath('', name)` ergab `/name`, ein Upload
+   per Pfeil oder Doppelklick landete in der Server-Wurzel. Jetzt sind Pfeile und Doppelklick
+   gesperrt, solange auf der Zielseite kein Ordner geladen ist (UI-Lauf J10).
+
+**Falsche/irreführende Aussagen korrigiert (Text)**
+
+- Tutorial Schritt 1 (DE/EN) verwies auf einen Handbuch-Abschnitt „Protokolle“, den es nicht gibt →
+  „Handbuch › Verbindungen & Profile“.
+- Tutorial Schritt 2 (DE/EN): „SFTP/SCP/rsync/FTPS: … oder SSH-Schlüsseldatei mit Passphrase“ —
+  FTPS hat keine Schlüsseldatei, rsync keine Passwort-Anmeldung. Aufgeteilt in SFTP/SCP, rsync, FTPS.
+- Handbuch „Dateiverwaltung“ (DE/EN): „ProFTPD sendet per LIST UTC“ war als Standard für alle
+  FTPS-Server formuliert; jetzt MLSD/LIST-Verhalten beschrieben.
+- Handbuch „Übertragungen“ (DE/EN): Verhalten beim Schließen/Update-Neustart ergänzt; nicht
+  auflistbare Ordner als Grenze genannt.
+- README: „Alle Backends sind mit Integrationstests gegen echte Server abgedeckt“ — falsch für
+  Azure Blob und GCS (nur Unit-Test/Code-Review). Korrigiert.
+
+**Aussagen geprüft, zutreffend** (Code gelesen; „UI“ = im Mock-Harness gefahren): Protokollliste und
+Standardports (22/21/990/445); nur `https://` für WebDAV/S3 (`profiles.rs`); rsync ohne Passwort
+(`RsyncBackend::connect` lehnt ab); SCP-Verwaltung per `ls`/`mkdir`/`rm -r --`/`mv --`;
+SMB `DOMÄNE\benutzer`; Option „selbstsignierte Zertifikate“ nur bei FTPS/WebDAV/S3 (UI);
+Host-Key-Dialog vor Anmeldung, Abbrechen verbindet nicht (UI J2); „Host-Key vergessen“ (UI J9);
+Profil löschen mit Rückfrage (UI J9); Ersetzen-Rückfrage ohne Groß-/Kleinschreibung, Klick neben den
+Dialog bricht ab ohne Transfer (UI J4); sequenzielle Warteschlange, ✕ für laufende *und* wartende
+Einträge, „Erledigte entfernen“ entfernt fertig/Fehler/abgebrochen (UI J6); Fehlerursache am
+Eintrag + Tooltip (UI J3); Zielseite aktualisiert sich nach Erfolg (UI J5); Ordner löschen rekursiv
+bei allen Protokollen (SFTP/FTPS/SMB rekursiv, SCP/rsync `rm -r`, WebDAV `DELETE` auf Collection,
+Objektspeicher Präfix); lokale Symlinks werden als Link gelöscht (`remove_dir_all` folgt keinen
+Links, Windows-Junctions per `remove_dir`); Namensregeln (UI J7); Enter/Esc beim Umbenennen (UI J7);
+Pfadfeld + Enter, falscher Pfad lässt Ansicht stehen (UI J2); Wiederholung beim Ersetzen unter
+Windows bis ~3 s (`rename_with_retry`); Hilfe-Knopf unten rechts, Theme-Knopf in der Kopfzeile,
+Theme und Tutorial-Flag überleben Neustart (UI J1); Update-Check beim Start, Installation erst nach
+Klick (UI aus Runde 2). Handbuch DE und EN haben dieselben Abschnitte und Aussagen (Absatz für Absatz
+abgeglichen).
+
+**Nutzerreisen (Headless-Chrome gegen gemocktes IPC, DE und EN, 800 × 540, 83/83 grün)**
+
+Mock wie §7/§8, erweitert: Profile überleben einen Neustart (wie `profiles.json`), Fehlerfälle als
+`transfer_done`-Events mit den echten deutschen Engine-Texten, Ordner ohne Leserecht. Keine
+`window.confirm`-Aufrufe (alle Rückfragen sind eigene Dialoge, siehe §7 L1).
+
+- J1 Erster Start: Tutorial (6 Schritte) → schließen → Theme umschalten → Neustart: kein Tutorial,
+  Theme bleibt; Handbuchsuche („Teildatei“/„partial file“, „MLSD“, ohne Treffer).
+- J2 Profil anlegen: Pflichtfeld Name, Host-Key-Dialog abbrechen (nicht verbunden), erneut und
+  vertrauen; Doppelklick in Ordner, Ebene hoch, Pfadfeld, falscher Pfad.
+- J3 Fehlerfälle Download: Datenträger schreibgeschützt (OS 30), voll (OS 28), Datei gesperrt
+  (Windows OS 32) → Fehler am Eintrag in der UI-Sprache, Warteschlange läuft weiter.
+- J4 Ersetzen-Rückfrage per Klick neben den Dialog abbrechen → kein `transfer_start`.
+- J5 Upload per Doppelklick, Server-Liste aktualisiert.
+- J6 Laufenden Download per ✕ abbrechen, „Erledigte entfernen“.
+- J7 Lokal: ungültiger Name, neuer Ordner, Löschen abbrechen/bestätigen, Umbenennen per Esc.
+- J8 Neustart mitten im Download: leere Warteschlange, Profilliste, App bedienbar (die Teildatei
+  selbst: Unit-Tests oben).
+- J9 Profil bearbeiten, Host-Key vergessen, Profil löschen mit Rückfrage.
+- J10 Gegenstelle ohne Leserecht im Home: übersetzter Fehler, Upload-Pfeil gesperrt, Doppelklick
+  startet nichts (ohne Fix: Upload nach `/foto.jpg`).
+- Regression: UI-Lauf aus §8 (106 Prüfpunkte, DE/EN × hell/dunkel) unverändert grün.
+
+**Läufe**
+
+- `cargo test --workspace`: 33 Unit-Tests grün (17 core, 16 app). `cargo clippy --workspace
+  --all-targets`: 0 Warnungen. Windows-Typecheck und -Clippy (`x86_64-pc-windows-msvc`, Rezept §7): grün.
+- ITs FTPS: vsftpd explizit + implizit (kein MLSD → LIST-Pfad, neue mtime-Prüfung ±10 min) grün;
+  pyftpdlib 2.2 mit TLS (Wegwerf-venv, kein Projekt-Abhängigkeit) mit **LIST in Asia/Tokyo-Ortszeit
+  und MLSD in UTC**: Test grün, d. h. die Zeiten kommen aus MLSD (LIST allein läge 9 h daneben,
+  per `ftplib` gegengeprüft); Serverlog zeigt `MLST` einmal, danach `LIST`+`MLSD` je Ordner.
+- `pnpm test` 10/10, `pnpm build` ok.
+- Keine neuen Abhängigkeiten (Rust und JS); `async-trait` nicht in die App übernommen, Test nutzt
+  `LocalBackend`.
+
+**Nur auf echter Hardware prüfbar (zusätzlich zu §7/§8)**
+
+32. Großen Download starten, Fenster schließen → keine `.name.fileport-part` im Zielordner
+    (macOS: Cmd+Q und rotes ✕; Windows: ✕ und Alt+F4). Danach App per Taskmanager/`kill -9`
+    während eines Downloads beenden, neu starten → Teildatei verschwindet beim Start.
+33. Update installieren, während ein Download läuft → nach dem Neustart keine Teildatei.
+34. FTPS gegen ProFTPD (Standard, `TimesGMT off`) und FileZilla Server: Änderungszeiten wie auf dem
+    Server in UTC umgerechnet; Ordner-Symlink löschen → nur der Link verschwindet.
+35. SFTP-Konto mit Home ohne Leserecht: Fehler beim Verbinden, Pfeile gesperrt.

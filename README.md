@@ -35,6 +35,12 @@ Oberfläche (`src/errors.ts`); Schlüsseldateien mit BOM/CRLF; korrekte
 Änderungszeiten bei SCP/rsync-Servern in anderen Zeitzonen; Rückfrage
 beim Trennen mit laufenden Transfers; die Warteschlange wartet, solange
 eine Ersetzen-Rückfrage offen ist.
+Nach der dritten Runde: Schließen des Fensters oder Update-Neustart
+mitten im Download hinterlässt keine `.fileport-part` mehr (Journal,
+Aufräumen beim Beenden und beim nächsten Start); FTPS liest
+Änderungszeiten per MLSD in UTC, wo der Server es kann; die
+Upload-Vorprüfung bricht nicht mehr ab, wenn der Zielordner sich nicht
+listen lässt; ohne geladenen Zielordner startet kein Transfer.
 
 - **Phase 1 — Protokoll-Engine (fertig):** Der Rust-Core (`core/`,
   `fileport-core`) spricht über einen gemeinsamen `Backend`-Trait das lokale
@@ -47,11 +53,13 @@ eine Ersetzen-Rückfrage offen ist.
   object_store: **S3-kompatible Dienste** (AWS, MinIO, Backblaze B2,
   Hetzner …), **Azure Blob Storage** und **Google Cloud Storage**.
   Jeder Transfer läuft mit Fortschritt, Abbruch-Token und BLAKE3-Prüfsumme.
-  Alle Backends sind mit Integrationstests gegen echte Server (Docker:
-  OpenSSH für SFTP/SCP/rsync, vsftpd mit TLS, Apache-DAV, Samba,
-  `rclone serve s3`)
-  abgedeckt — `FILEPORT_IT=1 cargo test`; Docker-Rezepte stehen in den
-  jeweiligen `core/tests/*_it.rs`.
+  Alle Backends außer Azure Blob und Google Cloud Storage sind mit
+  Integrationstests gegen echte Server abgedeckt (Docker: OpenSSH für
+  SFTP/SCP/rsync, vsftpd mit TLS, Apache-DAV, Samba, `rclone serve s3`;
+  FTPS-MLSD zusätzlich gegen pyftpdlib) — `FILEPORT_IT=1 cargo test`;
+  Rezepte stehen in den jeweiligen `core/tests/*_it.rs`. Azure und GCS
+  laufen über dieselbe object_store-Schicht wie S3 und sind nur per
+  Unit-Test (InMemory) und Code-Review geprüft — ohne echtes Konto.
 - **Phase 2 — Desktop-App (fertig):** Zwei-Fenster-UI (lokal ⇄ Gegenstelle),
   Verbindungs-Manager mit Profilen (Geheimnisse im OS-Schlüsselbund, nie in
   Dateien), sequenzielle Warteschlange mit Fortschritt und Abbruch,

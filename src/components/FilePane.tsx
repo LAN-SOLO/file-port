@@ -140,7 +140,9 @@ export default function FilePane({
     try {
       if (prompt.kind === 'newFolder') {
         const name = promptValue.trim();
-        if (!name) return;
+        // Ordner nie geladen (Listing scheiterte): joinPath('', name) wäre „/name“
+        // in der Server-Wurzel statt im gemeinten Ordner.
+        if (!name || dir === '') return;
         if (!isValidName(name)) return onError(t.invalidName);
         await api.mkdir(conn, joinPath(dir, name));
       } else if (prompt.kind === 'rename') {
@@ -235,6 +237,7 @@ export default function FilePane({
 
       <div className="pane-actions">
         <button
+          disabled={dir === ''}
           onClick={() => {
             setPromptValue('');
             setPrompt({ kind: 'newFolder' });

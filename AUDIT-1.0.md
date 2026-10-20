@@ -456,3 +456,45 @@ Mock wie §7/§8, erweitert: Profile überleben einen Neustart (wie `profiles.js
 34. FTPS gegen ProFTPD (Standard, `TimesGMT off`) und FileZilla Server: Änderungszeiten wie auf dem
     Server in UTC umgerechnet; Ordner-Symlink löschen → nur der Link verschwindet.
 35. SFTP-Konto mit Home ohne Leserecht: Fehler beim Verbinden, Pfeile gesperrt.
+
+## 10. Runde 3 – Verifikation (2026-10-20)
+
+Unabhängige Gegenprüfung von `7369410..52db370` mit dem Ziel, die Angaben aus §9 zu widerlegen.
+
+**Bestätigt (selbst ausgeführt):** `cargo test --workspace` grün (33 Unit-Tests: 17 core, 16 app),
+`cargo clippy --workspace --all-targets` 0 Warnungen; Windows-Typecheck und -Clippy
+(`x86_64-pc-windows-msvc`, Rezept §7) grün — weiterhin nur Typprüfung. `pnpm test` 10/10,
+`pnpm build` ok. `cargo audit`: unverändert `rsa` + 3× `zip` plus „unmaintained“-Hinweise (Linux).
+FTPS-IT `ftps_roundtrip_against_real_server` neu gegen vsftpd (delfer/alpine-ftp-server, MLST → 500,
+LIST-Pfad) und gegen pyftpdlib mit TLS, LIST in Asia/Tokyo-Ortszeit und MLSD in UTC grün; Serverlog
+zeigt `MLST` einmal, danach `LIST`+`MLSD` je Ordner. Der implizite FTPS-Test lief in dieser Runde
+nicht (braucht den zweiten Container auf Port 9990). UI-Lauf §9: jetzt 87/87, §8: 106/106, keine
+Konsolenfehler; ein einzelner Lauf blieb einmal in J7 an einem CDP-Aufruf hängen (Harness, nicht App),
+drei Wiederholungen danach grün.
+
+Code-Review des Diffs ohne Befund: MLST läuft über die Steuerverbindung (suppaftp liest die
+mehrzeilige 250-Antwort vollständig), 500/501/502/504 schalten dauerhaft auf LIST, andere Fehler
+prüfen beim nächsten Listing erneut; Journal/`shutdown()` sind idempotent (Update-Neustart ruft es,
+danach `RunEvent::Exit` noch einmal); Windows: Rust öffnet Dateien mit `FILE_SHARE_DELETE`, das
+Löschen der Teildatei bei noch offenem Handle ist also möglich bzw. greift beim Prozessende.
+
+**Help-Stichproben (nicht in §9 genannt), alle im Code bestätigt:** Host-Key verworfen bei Änderung
+von Host/Port (`profile_save`); leeres Geheimnis-Feld lässt das gespeicherte unverändert; Profil
+löschen entfernt das Geheimnis; `~/.ssh/…` wird aufs Home aufgelöst; WebDAV folgt Weiterleitungen
+nur auf https; WebDAV/S3 nur `https://`; FTPS nur TLS 1.2; rsync-ssh mit eigener `UserKnownHostsFile`
+und `StrictHostKeyChecking=yes`; Ersetzen-Wiederholung unter Windows bis ~3 s
+(`rename_with_retry`); Updater-Endpoint `LAN-SOLO/file-port` mit Signatur-Pubkey.
+
+**Gefunden und behoben**
+
+1. *„Neuer Ordner“ ohne geladenen Ordner legte in der Server-Wurzel an* (gleiche Ursache wie J10
+   aus §9): Scheitert das erste Listing (Start-Ordner ohne Leserecht), ist der Ordner der Seite leer,
+   `joinPath('', name)` ergibt `/name` — der Ordner landete in `/` statt im gemeinten Verzeichnis.
+   Im UI-Lauf reproduziert (Mock protokolliert `fs_mkdir` mit `/X`). Jetzt ist „Neuer Ordner“ gesperrt,
+   bis die Seite einen Ordner geladen hat (zusätzlich Absicherung in `submitPrompt`); nach ↑ oder
+   Pfadfeld in einen lesbaren Ordner sind Knopf und Pfeile wieder frei (neue Prüfpunkte J10).
+   Datei: `src/components/FilePane.tsx`; Handbuch „Dateiverwaltung“ DE/EN und README ergänzt.
+
+**Nur auf echter Hardware prüfbar:** unverändert §5/§7/§8 und §9 Punkte 32–35 (Fenster schließen/
+Cmd+Q/Alt+F4/Update-Neustart während eines Downloads, `kill -9` + Neustart, ProFTPD/FileZilla
+Server mit MLSD, Home ohne Leserecht), dazu: SFTP-Konto mit unlesbarem Home → „Neuer Ordner“ gesperrt.

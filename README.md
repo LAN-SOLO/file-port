@@ -40,7 +40,8 @@ mitten im Download hinterlässt keine `.fileport-part` mehr (Journal,
 Aufräumen beim Beenden und beim nächsten Start); FTPS liest
 Änderungszeiten per MLSD in UTC, wo der Server es kann; die
 Upload-Vorprüfung bricht nicht mehr ab, wenn der Zielordner sich nicht
-listen lässt; ohne geladenen Zielordner startet kein Transfer.
+listen lässt; ohne geladenen Zielordner startet kein Transfer und
+„Neuer Ordner“ bleibt gesperrt (legte sonst in der Server-Wurzel an).
 
 - **Phase 1 — Protokoll-Engine (fertig):** Der Rust-Core (`core/`,
   `fileport-core`) spricht über einen gemeinsamen `Backend`-Trait das lokale

@@ -205,9 +205,10 @@ const de: Content = {
     },
     {
       id: 'whatsnew',
-      title: 'Neu in 1.0',
+      title: 'Neu in 0.3 (Beta)',
       body: [
-        'Version 1.0 ist die erste stabile Ausgabe. Gegenüber den 0.2-Testversionen:',
+        'Version 0.3 ist die Beta vor 1.0 — die stabile Ausgabe folgt nach Abschluss der Tests. Gegenüber 0.2:',
+        '• Unverschlüsseltes FTP (Port 21) für Server ohne TLS — nur nach Warnung und ausdrücklicher Bestätigung im Profil',
         '• SSH-Host-Keys werden vor der ersten Anmeldung mit Fingerprint bestätigt; geänderte Schlüssel lösen eine Warnung aus, gemerkte Schlüssel lassen sich vergessen',
         '• rsync prüft den Server gegen den gemerkten Host-Key statt ihn blind zu übernehmen',
         '• FTPS funktioniert mit Servern, die TLS-Session-Wiederaufnahme verlangen (vsftpd & Co.); implizites FTPS überträgt jetzt Daten zuverlässig',
@@ -418,9 +419,10 @@ const en: Content = {
     },
     {
       id: 'whatsnew',
-      title: 'New in 1.0',
+      title: 'New in 0.3 (beta)',
       body: [
-        'Version 1.0 is the first stable release. Compared to the 0.2 test builds:',
+        'Version 0.3 is the beta ahead of 1.0 — the stable release follows once testing is complete. Compared to 0.2:',
+        '• Unencrypted FTP (port 21) for servers without TLS — only after a warning and explicit confirmation in the profile',
         '• SSH host keys are confirmed by fingerprint before the first login; changed keys trigger a warning, remembered keys can be forgotten',
         '• rsync verifies the server against the remembered host key instead of accepting it blindly',
         '• FTPS works with servers that require TLS session resumption (vsftpd & co.); implicit FTPS now transfers data reliably',

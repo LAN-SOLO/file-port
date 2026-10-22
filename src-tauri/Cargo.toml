@@ -1,6 +1,6 @@
 [package]
 name = "fileport-app"
-version = "1.0.0"
+version = "0.3.0"
 description = "fileport — Dateitransfer für jedes Protokoll"
 edition = "2021"
 license = "MIT"

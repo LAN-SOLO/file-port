@@ -256,7 +256,12 @@ export default function App() {
               </svg>
             )}
           </button>
-          {version && <span className="version">v{version}</span>}
+          {version && (
+            <span className="version">
+              v{version}
+              {version.startsWith('0.') && ` ${t.betaTag}`}
+            </span>
+          )}
         </div>
       </header>
 

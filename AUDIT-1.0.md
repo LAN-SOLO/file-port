@@ -1,6 +1,9 @@
 # fileport 1.0.0 — Audit (Funktion & Sicherheit)
 
 Stand: 2026-10-19 · Basis: `c24eb7d` (v0.2.9) · Ziel: 1.0.0-Testbuild für macOS und Windows
+
+> **2026-10-22:** Bis zur Freigabe läuft dieser Stand als **0.3.0 beta**; „1.0.0“ unten
+> meint die spätere Freigabe-Version.
 (CI per `workflow_dispatch` aus `main`).
 
 Legende Teststatus:

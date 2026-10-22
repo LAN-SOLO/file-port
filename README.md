@@ -15,7 +15,8 @@ Produktseite: https://lan-solo.com/de/tools/file-port/ · Plan:
 
 ## Status
 
-**v1.0.0 — erste stabile Version (Testbuild für macOS und Windows).**
+**v0.3.0 beta — Kandidat für 1.0 (Testbuild für macOS und Windows).** Die Version
+bleibt 0.x, bis die Tests abgeschlossen sind und 1.0 freigegeben ist.
 Audit, Testabdeckung, Sicherheitsbefunde und manuelle Testliste:
 [`AUDIT-1.0.md`](AUDIT-1.0.md). Die 0.x-Versionen folgten dem Schema
 `v0.PHASE.SCHRITT`.

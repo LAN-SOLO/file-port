@@ -512,6 +512,37 @@ button.small {
   cursor: pointer;
 }
 
+/* Klartext-FTP: Warnung + Bestätigung vor dem Speichern */
+.insecure-box {
+  border: 1px solid var(--error);
+  border-radius: 6px;
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--error) 9%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.insecure-box p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.insecure-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--error);
+  font-weight: 600;
+  font-size: 12.5px;
+}
+
+.proto-badge.insecure {
+  color: var(--error);
+  border-color: var(--error);
+}
+
 .form-actions {
   display: flex;
   gap: 8px;

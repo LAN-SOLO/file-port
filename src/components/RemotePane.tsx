@@ -3,13 +3,14 @@ import { api, emptyProfile, HostKeyPrompt, Profile, Protocol } from '../api';
 import { t } from '../i18n';
 import FilePane, { FilePaneProps } from './FilePane';
 
-/** Nur verschlüsselte Protokolle — Klartext-FTP gibt es bewusst nicht. */
+/** Verschlüsselte Protokolle; Klartext-FTP nur mit Warnung und Bestätigung. */
 const PROTOCOLS: { value: Protocol; label: string }[] = [
   { value: 'sftp', label: t.pSftp },
   { value: 'scp', label: t.pScp },
   { value: 'rsync', label: t.pRsync },
   { value: 'ftps', label: t.pFtps },
   { value: 'ftps_implicit', label: t.pFtpsImplicit },
+  { value: 'ftp_plain', label: t.pFtpPlain },
   { value: 'webdav', label: t.pWebdav },
   { value: 'smb', label: t.pSmb },
   { value: 's3', label: t.pS3 },
@@ -118,6 +119,7 @@ export default function RemotePane({
   const submitForm = async (connectAfter: boolean) => {
     if (!form) return;
     if (!form.name.trim()) return onError(t.nameRequired);
+    if (form.protocol === 'ftp_plain' && !form.insecure_confirmed) return;
     setBusy('form');
     try {
       const saved = await api.saveProfile(form, secret || null, clearSecret && !secret);
@@ -200,6 +202,8 @@ export default function RemotePane({
   const isRsync = f?.protocol === 'rsync';
   const isSmb = f?.protocol === 'smb';
   const isFtps = f?.protocol === 'ftps' || f?.protocol === 'ftps_implicit';
+  const isPlainFtp = f?.protocol === 'ftp_plain';
+  const blockedInsecure = isPlainFtp && !f?.insecure_confirmed;
   const isAzure = f?.protocol === 'azure';
   const isGcs = f?.protocol === 'gcs';
   const secretLabel = isS3
@@ -222,7 +226,13 @@ export default function RemotePane({
         {profiles.length === 0 && <p className="faint">{t.noProfiles}</p>}
         {profiles.map((p) => (
           <div className="profile-row" key={p.id}>
-            <span className="proto-badge">{normalizeProtocol(p.protocol)}</span>
+            {p.protocol === 'ftp_plain' ? (
+              <span className="proto-badge insecure" title={t.insecureBadge}>
+                ftp
+              </span>
+            ) : (
+              <span className="proto-badge">{normalizeProtocol(p.protocol)}</span>
+            )}
             <span className="profile-name" title={p.name}>
               {p.name}
             </span>
@@ -302,7 +312,8 @@ export default function RemotePane({
                 {t.fProtocol}
                 <select
                   value={f.protocol}
-                  onChange={(e) => set({ protocol: e.target.value as Protocol })}
+                  // Klartext-FTP bei jeder Neuauswahl frisch bestätigen lassen
+                  onChange={(e) => set({ protocol: e.target.value as Protocol, insecure_confirmed: false })}
                 >
                   {PROTOCOLS.map((p) => (
                     <option key={p.value} value={p.value}>
@@ -312,6 +323,33 @@ export default function RemotePane({
                 </select>
               </label>
             </div>
+
+            {isPlainFtp && (
+              <div className="insecure-box" role="alert">
+                <div className="insecure-title">
+                  <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
+                    <path
+                      d="M12 3 2 21h20L12 3Z M12 10v5 M12 18v.01"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                  {t.insecureTitle}
+                </div>
+                <p>{t.insecureBody}</p>
+                <label className="check">
+                  <input
+                    type="checkbox"
+                    checked={f.insecure_confirmed}
+                    onChange={(e) => set({ insecure_confirmed: e.target.checked })}
+                  />
+                  {t.insecureConfirm}
+                </label>
+              </div>
+            )}
 
             {isDav && (
               <label>
@@ -466,10 +504,10 @@ export default function RemotePane({
             <div className="faint">{t.secretStoreNote}</div>
 
             <div className="form-actions">
-              <button className="primary" disabled={busy !== null} onClick={() => submitForm(true)}>
+              <button className="primary" disabled={busy !== null || blockedInsecure} onClick={() => submitForm(true)}>
                 {busy === 'form' ? t.connecting : t.saveAndConnect}
               </button>
-              <button disabled={busy !== null} onClick={() => submitForm(false)}>
+              <button disabled={busy !== null || blockedInsecure} onClick={() => submitForm(false)}>
                 {t.save}
               </button>
               <button onClick={() => setForm(null)}>{t.cancel}</button>

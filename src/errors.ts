@@ -93,6 +93,10 @@ const EN_RULES: Rule[] = [
   [/Schlüsselbund: /g, 'Keychain: '],
   [/Profil nicht gefunden/g, 'Profile not found'],
   [
+    /Unverschlüsseltes FTP nicht bestätigt — im Profil das Risiko bestätigen oder FTPS verwenden/g,
+    'Unencrypted FTP not confirmed — confirm the risk in the profile or use FTPS',
+  ],
+  [
     /Nur https:\/\/-URLs — unverschlüsseltes WebDAV wird nicht unterstützt/g,
     'Only https:// URLs — unencrypted WebDAV is not supported',
   ],

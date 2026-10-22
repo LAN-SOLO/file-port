@@ -21,6 +21,9 @@ use crate::transfer::{TransferCtl, TransferResult};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum FtpSecurity {
+    /// Unverschlüsseltes FTP (Port 21): Passwort und Daten im Klartext. Nur
+    /// nach ausdrücklicher Bestätigung im Profil — die App-Schicht prüft das.
+    Plain,
     /// Explizites FTPS (AUTH TLS auf dem Standardport 21).
     ExplicitTls,
     /// Implizites FTPS (TLS ab dem ersten Byte, Standardport 990).
@@ -38,8 +41,8 @@ pub struct FtpConfig {
     pub accept_invalid_certs: bool,
 }
 
-/// FTPS über suppaftp (blocking) — immer TLS-verschlüsselt, unverschlüsseltes
-/// FTP wird nicht unterstützt. Jede Operation nimmt die Verbindung
+/// FTP(S) über suppaftp (blocking) — TLS-verschlüsselt, außer bei
+/// `FtpSecurity::Plain`. Jede Operation nimmt die Verbindung
 /// kurz aus dem Mutex und arbeitet in `spawn_blocking`, damit der
 /// Tokio-Reaktor frei bleibt.
 ///
@@ -250,16 +253,21 @@ fn data_stream(addr: SocketAddr) -> suppaftp::FtpResult<TcpStream> {
 
 impl FtpBackend {
     pub async fn connect(cfg: FtpConfig) -> Result<Self, FpError> {
-        let label = format!("ftps://{}@{}", cfg.user, cfg.host);
+        let scheme = if cfg.security == FtpSecurity::Plain { "ftp" } else { "ftps" };
+        let label = format!("{scheme}://{}@{}", cfg.user, cfg.host);
         let stream = tokio::task::spawn_blocking(move || -> Result<RustlsFtpStream, FpError> {
             let addr = resolve(&cfg.host, cfg.port)?;
-            let tls = tls_config(cfg.accept_invalid_certs)?;
             let stream = match cfg.security {
+                // Gleicher Stream-Typ wie FTPS, nur ohne AUTH TLS: Steuer- und
+                // Datenkanäle bleiben reines TCP.
+                FtpSecurity::Plain => RustlsFtpStream::connect_timeout(addr, CONNECT_TIMEOUT)
+                    .map_err(|e| FpError::Connect(e.to_string()))?,
                 FtpSecurity::ExplicitTls => RustlsFtpStream::connect_timeout(addr, CONNECT_TIMEOUT)
                     .map_err(|e| FpError::Connect(e.to_string()))?
-                    .into_secure(RustlsConnector::from(tls), &cfg.host)
+                    .into_secure(RustlsConnector::from(tls_config(cfg.accept_invalid_certs)?), &cfg.host)
                     .map_err(|e| FpError::Connect(format!("TLS: {e}")))?,
                 FtpSecurity::ImplicitTls => {
+                    let tls = tls_config(cfg.accept_invalid_certs)?;
                     let mut s = RustlsFtpStream::connect_secure_implicit(
                         &addr,
                         RustlsConnector::from(tls),

@@ -26,6 +26,11 @@ pub enum Protocol {
     /// Nur noch für alte Profile: verbindet seit 0.2.8 immer per AUTH TLS,
     /// unverschlüsseltes FTP gibt es nicht mehr.
     Ftp,
+    /// Unverschlüsseltes FTP — verbindet nur mit `insecure_confirmed`.
+    /// Eigener Wert statt `ftp`, damit alte Profile nie stillschweigend
+    /// von TLS auf Klartext fallen.
+    #[serde(rename = "ftp_plain")]
+    FtpPlain,
     Ftps,
     #[serde(rename = "ftps_implicit")]
     FtpsImplicit,
@@ -80,7 +85,14 @@ pub struct Profile {
     /// FTPS/WebDAV/S3: selbstsignierte Zertifikate akzeptieren.
     #[serde(default)]
     pub accept_invalid_certs: bool,
+    /// FTP (unverschlüsselt): Nutzerin hat die Warnung gelesen und
+    /// bestätigt, dass sie die Verbindung trotzdem aufbauen will.
+    #[serde(default)]
+    pub insecure_confirmed: bool,
 }
+
+const INSECURE_NOT_CONFIRMED: &str =
+    "Unverschlüsseltes FTP nicht bestätigt — im Profil das Risiko bestätigen oder FTPS verwenden";
 
 fn profiles_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
@@ -135,7 +147,7 @@ impl Protocol {
         match self {
             Protocol::Sftp | Protocol::Scp | Protocol::Rsync => 22,
             Protocol::FtpsImplicit => 990,
-            Protocol::Ftp | Protocol::Ftps => 21,
+            Protocol::Ftp | Protocol::FtpPlain | Protocol::Ftps => 21,
             Protocol::Smb => 445,
             _ => 0,
         }
@@ -261,6 +273,9 @@ pub async fn profile_save(
     profile.host = profile.host.trim().to_string();
     if profile.protocol.uses_host() && !profile.host.is_empty() {
         validate_host(&profile.host)?;
+    }
+    if profile.protocol == Protocol::FtpPlain && !profile.insecure_confirmed {
+        return Err(INSECURE_NOT_CONFIRMED.into());
     }
     if profile.id.is_empty() {
         let millis = std::time::SystemTime::now()
@@ -497,14 +512,15 @@ pub async fn connect(
             .await
             .map_err(|e| e.to_string())?,
         ),
-        // Alte „FTP"-Profile werden stillschweigend auf AUTH TLS gehoben —
-        // Klartext-FTP baut fileport grundsätzlich nicht mehr auf.
-        Protocol::Ftp | Protocol::Ftps | Protocol::FtpsImplicit => {
+        // Alte „FTP"-Profile (vor `ftp_plain`) werden weiter auf AUTH TLS
+        // gehoben; Klartext nur mit eigenem Protokoll + Bestätigung.
+        Protocol::Ftp | Protocol::FtpPlain | Protocol::Ftps | Protocol::FtpsImplicit => {
             let implicit = profile.protocol == Protocol::FtpsImplicit;
-            let security = if implicit {
-                FtpSecurity::ImplicitTls
-            } else {
-                FtpSecurity::ExplicitTls
+            let security = match profile.protocol {
+                Protocol::FtpsImplicit => FtpSecurity::ImplicitTls,
+                Protocol::FtpPlain if profile.insecure_confirmed => FtpSecurity::Plain,
+                Protocol::FtpPlain => return Err(INSECURE_NOT_CONFIRMED.into()),
+                _ => FtpSecurity::ExplicitTls,
             };
             let default_port = if implicit { 990 } else { 21 };
             Arc::new(
@@ -633,5 +649,15 @@ mod tests {
         assert_eq!(p[0].protocol, Protocol::Ftp);
         assert_eq!(p[0].protocol.default_port(), 21);
         assert!(p[0].host_key.is_empty());
+        assert!(!p[0].insecure_confirmed);
+    }
+
+    #[test]
+    fn plain_ftp_profiles_parse() {
+        let raw = r#"[{"id":"p1","name":"klar","protocol":"ftp_plain","host":"h","insecure_confirmed":true}]"#;
+        let p: Vec<Profile> = serde_json::from_str(raw).unwrap();
+        assert_eq!(p[0].protocol, Protocol::FtpPlain);
+        assert_eq!(p[0].protocol.default_port(), 21);
+        assert!(p[0].insecure_confirmed);
     }
 }

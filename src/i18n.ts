@@ -72,6 +72,11 @@ const de = {
   fAzureKey: 'Zugriffsschlüssel (Access Key)',
   fGcsKeyFile: 'Service-Account-Schlüsseldatei (JSON)',
   fInvalidCerts: 'Selbstsignierte Zertifikate akzeptieren',
+  insecureTitle: 'Unverschlüsselte Verbindung',
+  insecureBody:
+    'FTP überträgt Benutzername, Passwort und alle Dateien im Klartext. Jeder im selben Netz oder auf dem Weg zum Server kann mitlesen und Daten verändern. Wenn der Server es kann, verwenden Sie FTPS.',
+  insecureConfirm: 'Ich kenne das Risiko und möchte die Verbindung trotzdem aufbauen',
+  insecureBadge: 'Unverschlüsselt — Passwort und Daten im Klartext',
   secretKeptNote: 'Leer lassen behält das gespeicherte Geheimnis.',
   secretStoreNote: 'Geheimnisse landen im Schlüsselbund des Systems, nie in einer Datei.',
 
@@ -120,6 +125,7 @@ const de = {
   pRsync: 'rsync über SSH',
   pFtps: 'FTPS (explizit, AUTH TLS)',
   pFtpsImplicit: 'FTPS (implizit, Port 990)',
+  pFtpPlain: 'FTP (unverschlüsselt, Port 21)',
   pWebdav: 'WebDAV (HTTPS)',
   pSmb: 'SMB 2/3 (Windows/NAS)',
   pS3: 'S3 (AWS & kompatible)',
@@ -198,6 +204,11 @@ const en: typeof de = {
   fAzureKey: 'Access key',
   fGcsKeyFile: 'Service account key file (JSON)',
   fInvalidCerts: 'Accept self-signed certificates',
+  insecureTitle: 'Unencrypted connection',
+  insecureBody:
+    'FTP sends your user name, password and all files in plain text. Anyone on the same network or along the way to the server can read and alter them. Use FTPS if the server supports it.',
+  insecureConfirm: 'I understand the risk and want to connect anyway',
+  insecureBadge: 'Unencrypted — password and data in plain text',
   secretKeptNote: 'Leave empty to keep the stored secret.',
   secretStoreNote: 'Secrets go into the system keychain, never into a file.',
 
@@ -246,6 +257,7 @@ const en: typeof de = {
   pRsync: 'rsync over SSH',
   pFtps: 'FTPS (explicit, AUTH TLS)',
   pFtpsImplicit: 'FTPS (implicit, port 990)',
+  pFtpPlain: 'FTP (unencrypted, port 21)',
   pWebdav: 'WebDAV (HTTPS)',
   pSmb: 'SMB 2/3 (Windows/NAS)',
   pS3: 'S3 (AWS & compatible)',

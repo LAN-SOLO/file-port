@@ -2,7 +2,8 @@
 //! delfer/alpine-ftp-server mit erzwungenem TLS und selbstsigniertem
 //! Zertifikat). vsftpd verlangt standardmäßig TLS-Session-Wiederaufnahme
 //! auf dem Datenkanal (`require_ssl_reuse=YES`) — genau das prüft der Test
-//! mit. Klartext-FTP unterstützt fileport seit 0.2.8 nicht mehr.
+//! mit. Klartext-FTP (nur nach Bestätigung im Profil) prüft
+//! `plain_ftp_against_real_server` gegen einen zweiten vsftpd ohne TLS.
 //!
 //! ```sh
 //! mkdir -p /tmp/fileport-ftps
@@ -163,4 +164,68 @@ async fn ftps_implicit_against_real_server() {
     })
     .await;
     assert!(strict.is_err());
+}
+
+/// Unverschlüsseltes FTP: vsftpd ohne TLS auf Port 2122.
+///
+/// ```sh
+/// docker run --rm -d --name fileport-ftp-plain -p 2122:21 -p 21200-21210:21200-21210 \
+///   -e USERS="foo|pass" -e ADDRESS=127.0.0.1 -e MIN_PORT=21200 -e MAX_PORT=21210 \
+///   delfer/alpine-ftp-server
+/// FILEPORT_IT=1 FILEPORT_IT_FTP_PLAIN=1 cargo test -p fileport-core --test ftp_it
+/// ```
+#[tokio::test(flavor = "multi_thread")]
+async fn plain_ftp_against_real_server() {
+    if std::env::var("FILEPORT_IT").as_deref() != Ok("1")
+        || std::env::var("FILEPORT_IT_FTP_PLAIN").as_deref() != Ok("1")
+    {
+        eprintln!("übersprungen — FILEPORT_IT=1 und FILEPORT_IT_FTP_PLAIN=1 setzen");
+        return;
+    }
+    let be = FtpBackend::connect(FtpConfig {
+        host: "127.0.0.1".into(),
+        port: 2122,
+        user: "foo".into(),
+        password: "pass".into(),
+        security: FtpSecurity::Plain,
+        accept_invalid_certs: false,
+    })
+    .await
+    .unwrap();
+    assert!(be.label().starts_with("ftp://"));
+
+    let home = be.initial_dir().await.unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let src = dir.path().join("src.bin");
+    let data: Vec<u8> = (0..200_000u32).map(|i| (i % 251) as u8).collect();
+    tokio::fs::write(&src, &data).await.unwrap();
+
+    let base = format!("{}/plain-it", home.trim_end_matches('/'));
+    be.mkdir(&base).await.unwrap();
+    let up = be
+        .upload(&src, &format!("{base}/file.bin"), &TransferCtl::noop())
+        .await
+        .unwrap();
+    let listing = be.list(&base).await.unwrap();
+    assert_eq!(listing.len(), 1);
+    assert_eq!(listing[0].size, data.len() as u64);
+    let dst = dir.path().join("dst.bin");
+    let down = be
+        .download(&format!("{base}/file.bin"), &dst, &TransferCtl::noop())
+        .await
+        .unwrap();
+    assert_eq!(down.blake3, up.blake3);
+    be.remove(&base, true).await.unwrap();
+
+    // Ein Klartext-Server ohne TLS darf FTPS nicht „gelingen“ lassen.
+    let tls = FtpBackend::connect(FtpConfig {
+        host: "127.0.0.1".into(),
+        port: 2122,
+        user: "foo".into(),
+        password: "pass".into(),
+        security: FtpSecurity::ExplicitTls,
+        accept_invalid_certs: true,
+    })
+    .await;
+    assert!(tls.is_err());
 }

@@ -1,11 +1,11 @@
 # fileport
 
 Datei-Transfer-Client für macOS, Windows und Linux: spricht SFTP, SCP,
-rsync über SSH, FTPS, WebDAV (HTTPS) und SMB 2/3, verbindet Clouds von
+rsync über SSH, FTPS, FTP, WebDAV (HTTPS) und SMB 2/3, verbindet Clouds von
 S3-kompatiblen Diensten über Azure Blob und Google Cloud Storage bis
 (geplant) Dropbox, Google Drive und OneDrive — und überträgt mit
 BLAKE3-Prüfsumme und Warteschlange (Direkt-Drop von Gerät zu Gerät geplant).
-Kein Klartext-FTP, kein SMB1; SMB ist nur verschlüsselt, wenn der Server
+Klartext-FTP nur nach ausdrücklicher Bestätigung (Warnung im Profil), kein SMB1; SMB ist nur verschlüsselt, wenn der Server
 SMB3-Verschlüsselung verlangt (sonst signiert). **Free** bleibt dauerhaft kostenlos und voll
 nutzbar; **fileport bridged** (12 €/Jahr = 1 €/Monat) ergänzt die
 Server-zu-Server-Brücke, AS2/OFTP2 (MFT) und Automatisierung.
@@ -49,7 +49,8 @@ listen lässt; ohne geladenen Zielordner startet kein Transfer und
   **rsync über SSH** (gemeinsame russh-Schicht; SCP spricht das klassische
   Protokoll selbst, rsync spawnt das lokale rsync/ssh mit Schlüssel-Auth),
   **FTPS** (suppaftp über rustls, TLS 1.2 mit Session-Reuse, explizit &
-  implizit — Klartext-FTP gibt es seit 0.2.8 nicht mehr), **WebDAV** (eigener DAV-Layer über reqwest, nur HTTPS),
+  implizit; unverschlüsseltes FTP als eigenes Protokoll `ftp_plain` nur mit
+  `insecure_confirmed` im Profil), **WebDAV** (eigener DAV-Layer über reqwest, nur HTTPS),
   **SMB 2/3** (Pure-Rust-Crate smb2, nie SMB1) sowie Objektspeicher über
   object_store: **S3-kompatible Dienste** (AWS, MinIO, Backblaze B2,
   Hetzner …), **Azure Blob Storage** und **Google Cloud Storage**.

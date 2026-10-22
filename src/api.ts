@@ -20,12 +20,16 @@ export interface Entry {
 /** Verbindung 0 ist immer das lokale Dateisystem. */
 export const LOCAL_CONN = 0;
 
-/** `ftp` existiert nur noch in alten Profilen — verbindet immer per AUTH TLS. */
+/**
+ * `ftp` existiert nur noch in alten Profilen — verbindet immer per AUTH TLS.
+ * Unverschlüsseltes FTP heißt `ftp_plain` und braucht `insecure_confirmed`.
+ */
 export type Protocol =
   | 'sftp'
   | 'scp'
   | 'rsync'
   | 'ftp'
+  | 'ftp_plain'
   | 'ftps'
   | 'ftps_implicit'
   | 'webdav'
@@ -53,6 +57,8 @@ export interface Profile {
   access_key: string;
   path_style: boolean;
   accept_invalid_certs: boolean;
+  /** FTP (unverschlüsselt): Risiko-Warnung bestätigt. */
+  insecure_confirmed: boolean;
 }
 
 export function emptyProfile(protocol: Protocol = 'sftp'): Profile {
@@ -74,6 +80,7 @@ export function emptyProfile(protocol: Protocol = 'sftp'): Profile {
     access_key: '',
     path_style: false,
     accept_invalid_certs: false,
+    insecure_confirmed: false,
   };
 }
 
